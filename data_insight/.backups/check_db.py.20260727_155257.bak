@@ -1,0 +1,44 @@
+import sqlite3
+import sys
+sys.path.insert(0, '.')
+from tools.create_test_db import create_test_db
+
+# 初始化数据库
+create_test_db()
+
+# 连接数据库
+conn = sqlite3.connect('test_retail.db')
+cursor = conn.cursor()
+
+# 查看表
+cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+tables = cursor.fetchall()
+print("表列表:", tables)
+
+# 查询 orders 表结构
+cursor.execute("PRAGMA table_info(orders)")
+columns = cursor.fetchall()
+print("orders 表结构:", columns)
+
+# 查询数据条数
+cursor.execute("SELECT COUNT(*) FROM orders")
+count = cursor.fetchone()
+print("订单总数:", count)
+
+# 查询所有月份的数据
+cursor.execute("SELECT DISTINCT strftime('%Y-%m', order_date) as month FROM orders ORDER BY month")
+months = cursor.fetchall()
+print("所有月份:", months)
+
+# 查询上个月的销售额
+cursor.execute("""
+    SELECT strftime('%Y-%m', order_date) as month, SUM(order_amount) as total_sales
+    FROM orders
+    GROUP BY month
+    ORDER BY month DESC
+    LIMIT 3
+""")
+sales = cursor.fetchall()
+print("最近3个月销售额:", sales)
+
+conn.close()

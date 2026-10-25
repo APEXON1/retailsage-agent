@@ -1,0 +1,90 @@
+{
+    "UV": {
+        "name": "UV（独立访客）",
+        "aliases": ["访客数", "独立用户", "流量"],
+        "definition": "去重后的访问用户数",
+        "formula": "COUNT(DISTINCT user_id)",
+        "unit": "人",
+        "category": "流量类"
+    },
+    "PV": {
+        "name": "PV（页面浏览量）",
+        "aliases": ["浏览量", "页面访问量"],
+        "definition": "页面被浏览的总次数",
+        "formula": "COUNT(page_view)",
+        "unit": "次",
+        "category": "流量类"
+    },
+    "跳出率": {
+        "name": "跳出率",
+        "keywords": ["bounce_rate"],
+        "definition": "只浏览一个页面就离开的访问比例",
+        "formula": "跳出访问数 / 总访问数 × 100%",
+        "unit": "%",
+        "category": "流量类"
+    },
+    "加购率": {
+        "name": "加购率",
+        "aliases": ["加购转化率"],
+        "definition": "加购人数占访问人数的比例",
+        "formula": "加购人数 / 访问人数 × 100%",
+        "unit": "%",
+        "category": "转化类"
+    },
+    "下单转化率": {
+        "name": "下单转化率",
+        "aliases": ["下单率"],
+        "definition": "下单人数占访问人数的比例",
+        "formula": "下单人数 / 访问人数 × 100%",
+        "unit": "%",
+        "category": "转化类"
+    },
+    "支付转化率": {
+        "name": "支付转化率",
+        "aliases": ["支付率", "付款率"],
+        "definition": "支付人数占下单人数的比例",
+        "formula": "支付人数 / 下单人数 × 100%",
+        "unit": "%",
+        "category": "转化类"
+    },
+    "动销率": {
+        "name": "动销率",
+        "aliases": ["商品动销率"],
+        "definition": "有销售的SKU数占总SKU数的比例",
+        "formula": "有销售SKU数 / 总SKU数 × 100%",
+        "unit": "%",
+        "category": "商品类"
+    },
+    "退货率": {
+        "name": "退货率",
+        "aliases": ["退款率"],
+        "definition": "退货订单数占总订单数的比例",
+        "formula": "退货订单数 / 总订单数 × 100%",
+        "unit": "%",
+        "category": "商品类"
+    },
+    "CAC": {
+        "name": "CAC（新客获取成本）",
+        "aliases": ["获客成本", "新客成本"],
+        "definition": "获取一个新客户的平均成本",
+        "formula": "营销费用 / 新客数",
+        "unit": "元/人",
+        "category": "客户类"
+    },
+    "LTV": {
+        "name": "LTV（客户生命周期价值）",
+        "aliases": ["客户价值", "终身价值"],
+        "definition": "客户在整个生命周期内的总消费",
+        "formula": "平均客单价 × 购买频率 × 客户生命周期",
+        "unit": "元",
+        "category": "客户类"
+    },
+    "ROI": {
+        "name": "ROI（投资回报率）",
+        "aliases": ["投入产出比"],
+        "definition": "投资收益与投资成本的比率",
+        "formula": "(收益 - 成本) / 成本 × 100%",
+        "unit": "%",
+        "category": "效率类"
+    }
+}

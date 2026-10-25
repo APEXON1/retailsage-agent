@@ -1,0 +1,98 @@
+{
+    "weekly_report": {
+        "name": "周报模板",
+        "description": "适用于每周经营数据回顾",
+        "sections": [
+            {
+                "title": "📊 本周概览",
+                "content_template": "· 总GMV：{gmv_total}万，环比{gmv_change}\n· 订单量：{orders_total}单，环比{orders_change}\n· 客单价：{aov}元，环比{aov_change}"
+            },
+            {
+                "title": "📈 核心指标趋势",
+                "content_template": "近8周GMV趋势：\n{trend_chart}"
+            },
+            {
+                "title": "🔍 异常发现",
+                "content_template": "{anomalies}"
+            },
+            {
+                "title": "📋 下周计划",
+                "content_template": "{action_items}"
+            }
+        ]
+    },
+    "monthly_report": {
+        "name": "月度经营分析",
+        "description": "适用于月度经营数据深度分析",
+        "sections": [
+            {
+                "title": "📊 月度概览",
+                "content_template": "· GMV：{gmv_total}万（目标完成率{target_rate}%）\n· 同比{yoy_change}，环比{mom_change}"
+            },
+            {
+                "title": "📈 指标分析",
+                "content_template": "· 流量：UV {uv}万，环比{uv_change}\n· 转化率：{conversion}%，环比{conversion_change}pp\n· 客单价：{aov}元，环比{aov_change}"
+            },
+            {
+                "title": "🏪 区域/门店排名",
+                "content_template": "· TOP3区域：{top_regions}\n· 需关注区域：{concern_regions}"
+            },
+            {
+                "title": "🔍 归因分析",
+                "content_template": "· 增长因素：{growth_factors}\n· 下降因素：{decline_factors}"
+            },
+            {
+                "title": "📋 行动建议",
+                "content_template": "{recommendations}"
+            }
+        ]
+    },
+    "promotion_review": {
+        "name": "大促复盘",
+        "description": "适用于大促活动结束后复盘",
+        "sections": [
+            {
+                "title": "📊 大促概览",
+                "content_template": "· 活动期间GMV：{gmv_total}万\n· 目标完成率：{target_rate}%\n· ROI：{roi}"
+            },
+            {
+                "title": "📈 漏斗分析",
+                "content_template": "· 曝光 → 点击：{ctr}%\n· 点击 → 加购：{add_cart_rate}%\n· 加购 → 下单：{order_rate}%\n· 下单 → 支付：{pay_rate}%"
+            },
+            {
+                "title": "🏆 爆款分析",
+                "content_template": "{top_products}"
+            },
+            {
+                "title": "⚠️ 问题与改进",
+                "content_template": "{issues_and_improvements}"
+            },
+            {
+                "title": "📋 下次活动建议",
+                "content_template": "{next_promotion_suggestions}"
+            }
+        ]
+    },
+    "attribution_report": {
+        "name": "归因分析报告",
+        "description": "适用于异常数据的深度归因分析",
+        "sections": [
+            {
+                "title": "📊 异常概况",
+                "content_template": "· 异常指标：{metric}\n· 异常程度：{severity}\n· 影响范围：{scope}"
+            },
+            {
+                "title": "🔍 维度下钻",
+                "content_template": "{drill_down_results}"
+            },
+            {
+                "title": "💡 归因结论",
+                "content_template": "{attribution_conclusion}"
+            },
+            {
+                "title": "📋 行动建议",
+                "content_template": "{recommendations}"
+            }
+        ]
+    }
+}

@@ -1,0 +1,49 @@
+# === 环境变量（含 API Key，必须忽略）===
+.env
+.env.*
+!.env.example
+
+# 旧路径兼容
+data_insight/tools/.env
+
+# === Python 编译缓存 ===
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# === 运行时数据（用户隐私 + 临时产物）===
+data_insight/memory/
+!data_insight/memory/.gitkeep
+memory/
+
+# === 输出文件（图表、报告，运行时生成）===
+data_insight/output/
+!data_insight/output/.gitkeep
+
+# === 数据库文件（运行时生成或用户真实数据）===
+*.db
+*.sqlite
+*.sqlite3
+
+# === 向量数据库 ===
+chroma.sqlite3
+*.bin
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === 虚拟环境 ===
+venv/
+.venv/
+env/

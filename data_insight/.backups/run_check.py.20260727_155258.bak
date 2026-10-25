@@ -1,0 +1,1 @@
+exec(open("check_db.py").read())

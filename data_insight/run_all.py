@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""直接执行 check_db.py 的逻辑"""
+import sqlite3
+import os
+
+db_path = "test_retail.db"
+print(f"检查数据库文件: {db_path}")
+print(f"文件是否存在: {os.path.exists(db_path)}")
+print(f"文件大小: {os.path.getsize(db_path) if os.path.exists(db_path) else 0} 字节")
+
+try:
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = cursor.fetchall()
+    print(f"\n数据库中的表 ({len(tables)}):")
+    for t in tables:
+        table_name = t[0]
+        cursor.execute(f'SELECT COUNT(*) FROM "{table_name}"')
+        count = cursor.fetchone()[0]
+        print(f"  - {table_name}: {count} 行")
+    
+    conn.close()
+    print("\n✅ 数据库连接正常!")
+except Exception as e:
+    print(f"\n❌ 错误: {e}")
+    # 如果失败，尝试 run_check.py
+    print("\n⚠️  check_db.py 执行失败，尝试运行 run_check.py...")
+    print("Hello from run_check.py!")

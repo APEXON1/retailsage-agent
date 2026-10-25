@@ -1,0 +1,40 @@
+# RetailSage Agent 依赖清单
+# 基于 HelloAgents 框架的零售/电商数据分析 Agent
+
+# === 框架核心 ===
+hello-agents
+
+# === LLM API ===
+openai
+anthropic
+
+# === 数据处理 ===
+pandas
+numpy
+
+# === 数据库连接 ===
+sqlalchemy
+pymysql
+psycopg2-binary
+clickhouse-driver
+
+# === RAG 系统 ===
+chromadb
+sentence-transformers
+rank_bm25
+jieba
+
+# === 可视化 ===
+matplotlib
+
+# === 报告生成 ===
+jinja2
+fpdf2
+python-pptx
+
+# === RAG 评测 ===
+ragas
+
+# === 工具 ===
+python-dotenv
+pydantic

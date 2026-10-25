@@ -1,0 +1,68 @@
+{
+    "time_rules": {
+        "上个月": {
+            "description": "上个自然月",
+            "start": "DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')",
+            "end": "LAST_DAY(CURDATE() - INTERVAL 1 MONTH)"
+        },
+        "本月": {
+            "description": "当前自然月",
+            "start": "DATE_FORMAT(CURDATE(), '%Y-%m-01')",
+            "end": "CURDATE()"
+        },
+        "上季度": {
+            "description": "上个自然季度",
+            "start": "DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 3 MONTH)",
+            "end": "LAST_DAY(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))"
+        },
+        "近7天": {
+            "description": "最近7天",
+            "start": "DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
+            "end": "CURDATE()"
+        },
+        "近30天": {
+            "description": "最近30天",
+            "start": "DATE_SUB(CURDATE(), INTERVAL 30 DAY)",
+            "end": "CURDATE()"
+        }
+    },
+    "region_mapping": {
+        "华东": ["上海", "江苏", "浙江", "安徽", "山东"],
+        "华北": ["北京", "天津", "河北", "山西", "内蒙古"],
+        "华南": ["广东", "广西", "海南", "福建"],
+        "华中": ["湖北", "湖南", "河南", "江西"],
+        "西南": ["四川", "重庆", "贵州", "云南", "西藏"],
+        "西北": ["陕西", "甘肃", "青海", "宁夏", "新疆"],
+        "东北": ["辽宁", "吉林", "黑龙江"]
+    },
+    "anomaly_thresholds": {
+        "sales_drop_pct": 10,
+        "traffic_drop_pct": 15,
+        "conversion_drop_pct": 20,
+        "stockout_rate_pct": 5,
+        "return_rate_pct": 10
+    },
+    "analysis_rules": {
+        "sales_drop_analysis": {
+            "description": "销售额下降分析规则",
+            "steps": [
+                "1. 确认下降幅度和时间范围",
+                "2. 按区域维度下钻，定位主要下降区域",
+                "3. 按品类维度下钻，定位主要下降品类",
+                "4. 检查客流和转化率变化",
+                "5. 检查外部因素（竞对、天气、节假日）",
+                "6. 综合归因并给出建议"
+            ]
+        },
+        "promotion_analysis": {
+            "description": "促销效果分析规则",
+            "steps": [
+                "1. 对比促销前中后的销售数据",
+                "2. 计算促销期间的增量销售",
+                "3. 分析促销对后续销售的影响（透支效应）",
+                "4. 计算促销ROI",
+                "5. 总结经验教训"
+            ]
+        }
+    }
+}

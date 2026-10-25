@@ -1,0 +1,120 @@
+{
+    "GMV": {
+        "name": "GMV（成交总额）",
+        "aliases": ["销售额", "营收", "流水", "成交额", "总销售额"],
+        "definition": "一段时间内的总销售额，包含已付款和未付款订单",
+        "formula": "SUM(order_amount)",
+        "unit": "元",
+        "category": "销售类",
+        "table": "orders",
+        "field": "order_amount",
+        "aggregation": "sum"
+    },
+    "净销售额": {
+        "name": "净销售额",
+        "aliases": ["实收", "净收入"],
+        "definition": "GMV减去退款和折扣后的实际收入",
+        "formula": "GMV - 退款金额 - 折扣金额",
+        "unit": "元",
+        "category": "销售类"
+    },
+    "客单价": {
+        "name": "客单价",
+        "aliases": ["人均消费", "平均订单金额", "AOV"],
+        "definition": "每个订单的平均金额",
+        "formula": "GMV / 订单数",
+        "unit": "元",
+        "category": "销售类"
+    },
+    "订单量": {
+        "name": "订单量",
+        "aliases": ["订单数", "成交量", "成交笔数"],
+        "definition": "一段时间内的订单总数",
+        "formula": "COUNT(order_id)",
+        "unit": "单",
+        "category": "销售类",
+        "table": "orders",
+        "field": "order_id",
+        "aggregation": "count"
+    },
+    "连带率": {
+        "name": "连带率",
+        "aliases": ["件单价", "连带销售率"],
+        "definition": "每个订单的平均商品件数",
+        "formula": "销售件数 / 成交笔数",
+        "unit": "件/单",
+        "category": "销售类"
+    },
+    "坪效": {
+        "name": "坪效",
+        "aliases": ["平米产出", "面积效率"],
+        "definition": "每平方米面积产生的销售额",
+        "formula": "销售额 / 门店面积",
+        "unit": "元/㎡",
+        "category": "效率类"
+    },
+    "转化率": {
+        "name": "转化率",
+        "aliases": ["成交率", "购买转化率"],
+        "definition": "成交客户数占访问客户数的比例",
+        "formula": "成交客户数 / 访问客户数 × 100%",
+        "unit": "%",
+        "category": "转化类"
+    },
+    "复购率": {
+        "name": "复购率",
+        "aliases": ["回头率", "重复购买率"],
+        "definition": "重复购买客户数占总客户数的比例",
+        "formula": "重复购买客户数 / 总客户数 × 100%",
+        "unit": "%",
+        "category": "客户类"
+    },
+    "新客占比": {
+        "name": "新客占比",
+        "aliases": ["新客户比例"],
+        "definition": "新客户数占总客户数的比例",
+        "formula": "新客户数 / 总客户数 × 100%",
+        "unit": "%",
+        "category": "客户类"
+    },
+    "会员渗透率": {
+        "name": "会员渗透率",
+        "aliases": ["会员消费占比"],
+        "definition": "会员消费金额占总销售额的比例",
+        "formula": "会员消费金额 / 总销售额 × 100%",
+        "unit": "%",
+        "category": "客户类"
+    },
+    "库存周转率": {
+        "name": "库存周转率",
+        "aliases": ["周转率", "库存周转"],
+        "definition": "一定时期内库存周转的次数",
+        "formula": "销售成本 / 平均库存",
+        "unit": "次",
+        "category": "库存类"
+    },
+    "缺货率": {
+        "name": "缺货率",
+        "aliases": ["断货率"],
+        "definition": "缺货SKU数占总SKU数的比例",
+        "formula": "缺货SKU数 / 总SKU数 × 100%",
+        "unit": "%",
+        "category": "库存类"
+    },
+    "售罄率": {
+        "name": "售罄率",
+        "aliases": ["销售完成率"],
+        "definition": "已销售数量占进货数量的比例",
+        "formula": "已销售数量 / 进货数量 × 100%",
+        "unit": "%",
+        "category": "库存类"
+    },
+    "进店客流": {
+        "name": "进店客流",
+        "aliases": ["客流量", "到店人数"],
+        "definition": "进入门店的顾客数量",
+        "formula": "COUNT(DISTINCT customer_id)",
+        "unit": "人",
+        "category": "流量类"
+    }
+}
