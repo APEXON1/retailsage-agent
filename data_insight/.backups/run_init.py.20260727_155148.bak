@@ -1,5 +1,0 @@
-import os
-print("=== 开始初始化测试数据库 ===")
-result = os.system("python init_db.py")
-print(f"执行结果: {result}")
-print("=== 初始化完成 ===")

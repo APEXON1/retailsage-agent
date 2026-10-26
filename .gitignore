@@ -20,6 +20,14 @@ data_insight/memory/
 !data_insight/memory/.gitkeep
 memory/
 
+# === 日志文件 ===
+logs/
+data_insight/logs/
+*.log
+
+# === 本地自动备份 ===
+data_insight/.backups/
+
 # === 输出文件（图表、报告，运行时生成）===
 data_insight/output/
 !data_insight/output/.gitkeep
