@@ -184,9 +184,9 @@ def _uid_of(request: "gr.Request | None") -> str:
 
 def respond(message: str, history: list, request: gr.Request):
     """
-    处理用户发送消息并返回 Assistant 回复。
+    处理用户发送消息并返回 Assistant 回复（使用 generator 实现思考中提示）。
     history 采用 Gradio messages 格式：[{"role": "user"/"assistant", "content": "..."}]
-    返回第三个值为思考耗时文本，供前端显示。
+    返回 4 元组：(msg_input_value, history, time_text, thinking_update)。
     """
     uid = _uid_of(request)
     logger.info("收到 Web 用户消息: user=%s, 长度=%d 字符", uid, len(message or ""))
@@ -201,10 +201,15 @@ def respond(message: str, history: list, request: gr.Request):
             "默认接的是 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`）。"
             "如果你想用其他 OpenAI 兼容服务，把 `LLM_BASE_URL` 和 `LLM_MODEL_ID` 一起改掉即可。"
         )})
-        return "", history, ""
+        yield "", history, "", gr.update(visible=False)
+        return
 
     if not message or not message.strip():
-        return "", history, ""
+        yield "", history, "", gr.update(visible=False)
+        return
+
+    # 第一步：清空输入框并显示"思考中"
+    yield "", history, "", gr.update(visible=True)
 
     start_time = time.time()
     try:
@@ -224,17 +229,13 @@ def respond(message: str, history: list, request: gr.Request):
         history.append({"role": "assistant", "content": f"❌ 发生错误: {e}"})
         time_text = f"⚠️ 处理失败，用时 {elapsed:.1f} 秒"
 
-    return "", history, time_text
+    # 第二步：返回结果并隐藏"思考中"
+    yield "", history, time_text, gr.update(visible=False)
 
 
 def use_suggestion(text: str):
     """点击推荐问题时，直接返回该文本用于填充输入框。"""
     return text
-
-
-def _noop():
-    """用于 .then 链中触发 JS 的空函数。"""
-    return ()
 
 
 def clear_history(request: gr.Request):
@@ -459,7 +460,13 @@ CUSTOM_CSS = """
     color: #6b7280 !important;
     font-size: 14px !important;
     margin: 12px 0 !important;
-    display: none !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+}
+.thinking-indicator .wrap {
+    display: flex !important;
     align-items: center !important;
     justify-content: center !important;
     gap: 8px !important;
@@ -545,10 +552,11 @@ def build_demo() -> "gr.Blocks":
                 show_copy_button=True,
             )
 
-            # 思考中提示（默认通过 CSS 隐藏，发送时由 JS 显示）
+            # 思考中提示（默认隐藏，发送时由后端显示）
             thinking_indicator = gr.Markdown(
-                '<span class="thinking-spinner"></span> 模型思考中... <span class="thinking-time">0.0s</span>',
+                '<span class="thinking-spinner"></span> 模型思考中...',
                 elem_classes=["thinking-indicator"],
+                visible=False,
             )
 
             # 底部输入区
@@ -602,67 +610,16 @@ def build_demo() -> "gr.Blocks":
                     '<p class="footer-info">RetailSage Agent v0.1 · 基于 DeepSeek LLM · 数据仅供分析使用</p>',
                 )
 
-        # 注入前端 JS：控制思考中提示的显示、隐藏和计时
-        gr.HTML(
-            """
-            <script>
-            (function() {
-                if (window.retailSageThinking) return;
-                window.retailSageThinking = true;
-
-                window.startThinking = function() {
-                    const el = document.querySelector('.thinking-indicator');
-                    if (el) {
-                        el.style.display = 'flex';
-                        const timeSpan = el.querySelector('.thinking-time');
-                        if (timeSpan) timeSpan.textContent = '0.0s';
-                    }
-
-                    window.thinkingStart = Date.now();
-                    if (window.thinkingTimer) clearInterval(window.thinkingTimer);
-                    window.thinkingTimer = setInterval(function() {
-                        const seconds = ((Date.now() - window.thinkingStart) / 1000).toFixed(1);
-                        const timeSpan = document.querySelector('.thinking-indicator .thinking-time');
-                        if (timeSpan) timeSpan.textContent = seconds + 's';
-                    }, 100);
-
-                    // 监听 chatbot 内容变化，模型返回后自动停止计时
-                    if (!window.thinkingObserver) {
-                        const chatbot = document.querySelector('.chatbot');
-                        if (chatbot) {
-                            window.thinkingObserver = new MutationObserver(function() {
-                                setTimeout(stopThinking, 200);
-                            });
-                            window.thinkingObserver.observe(chatbot, { childList: true, subtree: true });
-                        }
-                    }
-                };
-
-                window.stopThinking = function() {
-                    if (window.thinkingTimer) {
-                        clearInterval(window.thinkingTimer);
-                        window.thinkingTimer = null;
-                    }
-                    const el = document.querySelector('.thinking-indicator');
-                    if (el) el.style.display = 'none';
-                };
-            })();
-            </script>
-            """,
-        )
-
         # 事件绑定
         send_btn.click(
             fn=respond,
             inputs=[msg_input, chatbot],
-            outputs=[msg_input, chatbot, time_display],
-            js="startThinking()",
+            outputs=[msg_input, chatbot, time_display, thinking_indicator],
         )
         msg_input.submit(
             fn=respond,
             inputs=[msg_input, chatbot],
-            outputs=[msg_input, chatbot, time_display],
-            js="startThinking()",
+            outputs=[msg_input, chatbot, time_display, thinking_indicator],
         )
         for btn in suggestion_btns:
             btn.click(
