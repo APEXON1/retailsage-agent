@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local secrets (SMTP 授权码等，切勿提交)
+.env
+
+# Migration backup
+*.bak-migrate
+
+# 真实简历 / 本地数据库 / 索引（含候选人个人信息与密码哈希，切勿提交）
+data/
+resumes.db
+resumes.db.bak-*
+faiss_index/
+bm25_index.pkl
+
+# 临时文件
+tmp_*.txt
+
+# IDE / 工具缓存
+.codegraph/
+

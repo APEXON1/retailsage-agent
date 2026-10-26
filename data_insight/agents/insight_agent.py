@@ -89,7 +89,9 @@ class InsightAgent:
         knowledge_dir: str = None,
         output_dir: str = None,
         memory_dir: str = None,
-        max_steps: int = 10
+        max_steps: int = 10,
+        vector_store_dir: str = None,
+        trace_enabled: bool = True
     ) -> ReActAgent:
         """
         创建完整的 InsightAgent
@@ -103,6 +105,9 @@ class InsightAgent:
             output_dir: 输出目录
             memory_dir: 记忆存储目录
             max_steps: 最大执行步数
+            vector_store_dir: 向量库目录。多用户场景应指向**共享**目录 ——
+                知识库是全站共用的资料，每个用户各建一份既浪费又要各加载一次向量模型
+            trace_enabled: 是否生成 trace 文件（每轮一个 HTML，多用户下没必要）
 
         Returns:
             配置好的 ReActAgent
@@ -135,7 +140,7 @@ class InsightAgent:
             skills_auto_register=True,
             session_enabled=True,
             session_dir=os.path.join(memory_dir, "sessions"),
-            trace_enabled=True,
+            trace_enabled=trace_enabled,
             trace_dir=os.path.join(memory_dir, "traces"),
             subagent_enabled=True,
         )
@@ -182,9 +187,11 @@ class InsightAgent:
         registry.register_tool(memory_tool)
 
         # 注册 RAG 工具
+        from ..config import EMBEDDING_MODEL
         rag_tool = RAGTool(
             knowledge_dir=knowledge_dir,
-            vector_store_dir=os.path.join(memory_dir, "vector_store"),
+            vector_store_dir=vector_store_dir or os.path.join(memory_dir, "vector_store"),
+            embedding_model=EMBEDDING_MODEL,
             llm=llm
         )
         registry.register_tool(rag_tool)

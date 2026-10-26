@@ -1,0 +1,18 @@
+# Streamlit 运行配置（本地与 Streamlit Cloud 均生效）
+[server]
+# 简历批量上传上限（MB），默认 200 已足够，这里显式收紧避免误传超大文件拖垮实例
+maxUploadSize = 50
+# 云端实例资源有限，关闭 XSRF 校验可避免部分代理环境下的误报（仅影响演示安全性）
+enableXsrfProtection = false
+
+[browser]
+# 演示场景：HR 扫码进入后不希望看到侧边栏默认收起的"Deploy"按钮
+gatherUsageStats = false
+
+[theme]
+# 偏专业的 HR 工具配色
+primaryColor = "#4A6CF7"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F7FB"
+textColor = "#1F2937"
+font = "sans serif"

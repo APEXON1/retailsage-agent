@@ -1,0 +1,27 @@
+[project]
+name = "my-rag"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "docx2txt>=0.9",
+    "faiss-cpu>=1.14.3",
+    "jieba>=0.42.1",
+    "langchain-community>=0.4.2",
+    "langchain-core>=1.4.9",
+    "langchain-ollama>=1.1.0",
+    "langchain-openai>=0.3.0",
+    "langchain-text-splitters>=1.1.2",
+    "numpy>=2.5.1",
+    "ollama>=0.6.2",
+    "openpyxl>=3.1.5",
+    "pdfplumber>=0.11.10",
+    "pillow>=12.3.0",
+    "pymupdf>=1.28.0",
+    "pypdf>=6.14.2",
+    "rank-bm25>=0.2.2",
+    "rapidocr-onnxruntime>=1.4.4",
+    "streamlit>=1.59.2",
+]

@@ -38,3 +38,14 @@ ragas
 # === 工具 ===
 python-dotenv
 pydantic
+
+# === Web 界面（门户 + 洞察应用）===
+# gradio 6 是洞察界面的硬依赖；fastapi/uvicorn 用于门户和认证网关，
+# 虽然 gradio 会带上它们，但显式声明可避免上游变更后装完跑不起来。
+gradio>=6,<7
+fastapi
+uvicorn
+
+# 说明：my-rag 子项目依赖另一套包（openai 3.x / faiss-cpu / streamlit），
+# 与本文件不兼容，必须使用独立虚拟环境，见 my-rag/requirements.txt。
+

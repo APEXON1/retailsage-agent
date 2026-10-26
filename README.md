@@ -7,6 +7,65 @@
 
 ---
 
+## 🧭 本仓库的组成（先看这里）
+
+这个目录里同时有**两个独立应用**，外加一个**统一门户**：
+
+| 服务 | 端口 | 技术栈 | 位置 |
+|---|---|---|---|
+| 总集门户（登录 + 入口卡片） | 8000 | FastAPI + Jinja2 | `portal/` |
+| RetailSage 数据洞察 | 7860 | Gradio + HelloAgents | 根目录 `app.py` / `data_insight/` |
+| 智能 HR 知识库 | 8501 | Streamlit + FAISS | `my-rag/` |
+
+三者是**三个独立进程**，共用一套账号（`accounts/accounts.db`）和一个会话 Cookie。
+Cookie 的作用域是主机名、不含端口，所以门户登录一次，浏览器访问另外两个端口时会自动带上，
+无需二次输入密码。任一服务崩溃或重启都不影响另外两个。
+
+### 启动方式
+
+| 场景 | 操作 |
+|---|---|
+| 全部启动（推荐） | 双击 `start.bat`，自动打开 http://127.0.0.1:8000/ |
+| 只启某一个 | `start-portal.bat` / `start-insight.bat` / `start-rag.bat` |
+| 停止全部 | `stop.bat` |
+
+`.bat` 只是外壳，真正的逻辑在 `launcher.py` 与 `stop.py`（批处理里刻意不写任何中文与复杂语法）：
+
+```
+.venv\Scripts\python.exe launcher.py                 三个都起
+.venv\Scripts\python.exe launcher.py --only portal    只起门户（insight / kb 同理）
+.venv\Scripts\python.exe stop.py                       停全部
+```
+
+> ⚠️ 维护提醒：改 `.bat` 必须保存为**纯 ASCII + CRLF 换行**。cmd.exe 按本地代码页（GBK）逐行解析，
+> UTF-8 中文会变乱码，多字节序列还会破坏行结构，导致 `echo` 的内容被当成命令执行
+> （表现为一串 `'xxx' is not recognized as an internal or external command`）。
+
+账号与原有账号完全一致：演示账号 `demo@demo.local / demo123456`，旧账号 `hr03` 等输入简写也可登录。
+注册与找回密码仍在「智能 HR 知识库」的登录页内完成（同一套账号，改完门户立即可用）。
+
+### 数据隔离
+
+| 范围 | 隔离方式 |
+|---|---|
+| 洞察应用的用户数据 | 会话历史 / 用户画像 / 图表 / 报告按账号分目录：`data_insight/memory/users/<账号>/`、`data_insight/output/users/<账号>/` |
+| 知识库应用的用户数据 | 简历文件 `my-rag/data/<邮箱>/`、DB 主键 `(owner_email, filename)`、索引 chunk 的 `metadata.owner` |
+| 全站共享（有意为之） | 业务库 `test_retail.db`、零售行业知识库、账号库 |
+
+### 运维脚本
+
+| 脚本 | 用途 |
+|---|---|
+| `tools/acceptance_check.py` | 端到端验收：干净启停 + 认证拦截 + 单点登录 + 索引完整性 |
+| `tools/probe_api.py` | 检查 `.env` 里的云端 API 能否跑 embedding 与对话（切换后端前必跑） |
+| `tools/rebuild_index.py` | 切换 embedding 模型后重建知识库索引（旧索引只改名不删除） |
+| `tools/probe_sso.py` | 验证知识库应用的 SSO 是否生效 |
+
+> ⚠️ 全链路必须使用 `127.0.0.1`，**不要用 `localhost`**。二者是不同的 host，Cookie 不互通，
+> 且会让子应用的 fetch / WebSocket 变成跨站请求，表现为「页面能打开、一点就 401」。
+
+---
+
 ## ✨ 项目亮点
 
 ### 1. 数据故事，而非数据图表 📖

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>智能问答门户</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand" style="margin-bottom:0">
+        <div class="brand-mark">◆</div>
+        <div>
+          <div class="brand-text">智能问答门户</div>
+          <div class="brand-sub">统一入口 · 多知识库</div>
+        </div>
+      </div>
+      <div class="userbox">
+        <div class="user-avatar">{{ masked[:2] | upper }}</div>
+        <span title="{{ email }}">{{ masked }}</span>
+        <a class="logout-link" href="/logout">退出</a>
+      </div>
+    </div>
+
+    <h1 class="page-title">选择一个知识库</h1>
+    <p class="page-sub">当前账号 {{ email }} 已登录，点开即用，无需再次输入密码。</p>
+
+    <div class="grid">
+      {% for app in cards %}
+      <a class="app-card" href="{{ app.url }}">
+        <div class="app-head">
+          <div class="app-icon">{{ app.icon }}</div>
+          <div>
+            <div class="app-name">{{ app.name }}</div>
+            {% if app.online %}
+            <span class="pill"><span class="dot"></span>运行中</span>
+            {% else %}
+            <span class="pill off"><span class="dot"></span>未启动</span>
+            {% endif %}
+          </div>
+        </div>
+        <p class="app-desc">{{ app.desc }}</p>
+        {% if app.tags %}
+        <div class="tags">
+          {% for t in app.tags %}<span class="tag">{{ t }}</span>{% endfor %}
+        </div>
+        {% endif %}
+        <span class="enter">进入应用 <span class="arrow">→</span></span>
+      </a>
+      {% endfor %}
+    </div>
+
+    <div class="page-foot">
+      <span>会话有效期 {{ ttl_hours }} 小时 · 退出后需重新登录</span>
+      <span>入口配置：portal/apps.json</span>
+    </div>
+  </div>
+</body>
+</html>

@@ -41,28 +41,71 @@ class Reranker:
         else:
             return self._simple_rerank(query, results, top_k)
 
+    @staticmethod
+    def _extract_terms(query: str) -> List[str]:
+        """
+        抽取查询中的有效词项
+
+        英文/数字按词边界切（GMV 是一个整体，不能拆成 g/m/v），
+        中文用 jieba 分词并丢弃单字（"的"这种不携带信息）。
+        """
+        import re
+
+        q = query.lower()
+        terms = re.findall(r"[a-z0-9_]+", q)
+
+        zh_part = re.sub(r"[a-z0-9_]", " ", q)
+        try:
+            import jieba
+            zh_terms = [t.strip() for t in jieba.cut(zh_part) if len(t.strip()) > 1]
+        except ImportError:
+            zh_terms = []
+
+        seen = set()
+        result = []
+        for t in terms + zh_terms:
+            if t and t not in seen:
+                seen.add(t)
+                result.append(t)
+        return result
+
     def _simple_rerank(self, query: str, results: List[Dict[str, Any]], top_k: int) -> List[Dict[str, Any]]:
         """
-        简单重排序（基于关键词匹配和文本长度）
+        简单重排序（词级匹配 + 结构化字段精确命中）
 
         策略：
-        1. 查询关键词在内容中出现的次数
-        2. 内容长度适中（不要太短也不要太长）
-        3. 与原始分数加权
+        1. 查询词项在内容中的命中率（词级，不是字符级）
+        2. 文档的 key/section 字段直接出现在查询里 —— 最强信号
+           （问"GMV"时，key 就是 "GMV" 的那篇文档必须排第一）
+        3. 内容长度适中
+        4. 与原始分数加权
         """
-        query_chars = set(query.lower())
+        terms = self._extract_terms(query)
+        query_lower = query.lower()
         scored_results = []
 
         for result in results:
             content = result.get("content", "")
             original_score = result.get("score", 0)
-
-            # 关键词匹配分数
             content_lower = content.lower()
-            keyword_matches = sum(1 for char in query_chars if char in content_lower and char.strip())
-            keyword_score = min(keyword_matches / max(len(query_chars), 1), 1.0)
+            metadata = result.get("metadata", {}) or {}
 
-            # 长度分数（适中长度更好）
+            # 1. 词级命中率
+            if terms:
+                hits = sum(1 for t in terms if t in content_lower)
+                keyword_score = hits / len(terms)
+            else:
+                keyword_score = 0.0
+
+            # 2. 结构化字段精确命中（key/section 出现在查询里）
+            field_bonus = 0.0
+            for field in ("key", "section"):
+                value = str(metadata.get(field, "")).strip().lower()
+                if value and len(value) >= 2 and value in query_lower:
+                    field_bonus = 1.0
+                    break
+
+            # 3. 长度分数（适中长度更好）
             length = len(content)
             if 50 < length < 500:
                 length_score = 1.0
@@ -72,7 +115,12 @@ class Reranker:
                 length_score = max(0.3, 1.0 - (length - 500) / 2000)
 
             # 综合分数
-            final_score = original_score * 0.5 + keyword_score * 0.3 + length_score * 0.2
+            final_score = (
+                original_score * 0.4
+                + keyword_score * 0.3
+                + field_bonus * 0.2
+                + length_score * 0.1
+            )
 
             scored_results.append({
                 **result,

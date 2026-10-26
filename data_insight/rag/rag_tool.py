@@ -23,7 +23,7 @@ class RAGTool(Tool):
     """RAG 检索工具 - 知识增强检索"""
 
     def __init__(self, knowledge_dir: str, vector_store_dir: str,
-                 embedding_model: str = "shibing624/text2vec-base-chinese",
+                 embedding_model: str = None,
                  collection_name: str = "data_insight_knowledge",
                  llm=None, enable_cache: bool = True):
         """
@@ -32,11 +32,14 @@ class RAGTool(Tool):
         Args:
             knowledge_dir: 知识文档目录
             vector_store_dir: 向量存储目录
-            embedding_model: Embedding 模型名称
+            embedding_model: Embedding 模型名称或本地目录（默认取 config.EMBEDDING_MODEL）
             collection_name: ChromaDB 集合名称
             llm: HelloAgentsLLM 实例（用于重排序）
             enable_cache: 是否启用缓存
         """
+        if embedding_model is None:
+            from ..config import EMBEDDING_MODEL as _default_embedding_model
+            embedding_model = _default_embedding_model
         super().__init__(
             name="rag_search",
             description="知识库检索工具。检索零售/电商行业知识，包括指标定义、业务规则、分析模板等。"
