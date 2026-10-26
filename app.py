@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import threading
+import time
 import traceback
 from collections import OrderedDict
 from pathlib import Path
@@ -185,6 +186,7 @@ def respond(message: str, history: list, request: gr.Request):
     """
     处理用户发送消息并返回 Assistant 回复。
     history 采用 Gradio messages 格式：[{"role": "user"/"assistant", "content": "..."}]
+    返回第三个值为思考耗时文本，供前端显示。
     """
     uid = _uid_of(request)
     logger.info("收到 Web 用户消息: user=%s, 长度=%d 字符", uid, len(message or ""))
@@ -199,30 +201,40 @@ def respond(message: str, history: list, request: gr.Request):
             "默认接的是 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`）。"
             "如果你想用其他 OpenAI 兼容服务，把 `LLM_BASE_URL` 和 `LLM_MODEL_ID` 一起改掉即可。"
         )})
-        return "", history
+        return "", history, ""
 
     if not message or not message.strip():
-        return "", history
+        return "", history, ""
 
+    start_time = time.time()
     try:
         # 按账号加锁：同一账号串行，不同账号可并行
         with _lock_for(uid):
             response = get_agent(uid).run(message)
         response_text = str(response)
-        logger.info("Agent 返回结果长度=%d 字符", len(response_text))
+        elapsed = time.time() - start_time
+        logger.info("Agent 返回结果长度=%d 字符，耗时=%.2f秒", len(response_text), elapsed)
         history.append({"role": "user", "content": message})
         history.append({"role": "assistant", "content": response_text})
+        time_text = f"✅ 思考完成，用时 {elapsed:.1f} 秒"
     except Exception as e:
+        elapsed = time.time() - start_time
         logger.exception("Web 对话处理失败: user=%s, err=%s", uid, e)
         history.append({"role": "user", "content": message})
         history.append({"role": "assistant", "content": f"❌ 发生错误: {e}"})
+        time_text = f"⚠️ 处理失败，用时 {elapsed:.1f} 秒"
 
-    return "", history
+    return "", history, time_text
 
 
 def use_suggestion(text: str):
     """点击推荐问题时，直接返回该文本用于填充输入框。"""
     return text
+
+
+def _noop():
+    """用于 .then 链中触发 JS 的空函数。"""
+    return None
 
 
 def clear_history(request: gr.Request):
@@ -441,6 +453,38 @@ CUSTOM_CSS = """
     color: #4f46e5 !important;
 }
 
+/* 思考中提示 */
+.thinking-indicator {
+    text-align: center !important;
+    color: #6b7280 !important;
+    font-size: 14px !important;
+    margin: 12px 0 !important;
+    display: none !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+}
+.thinking-spinner {
+    display: inline-block !important;
+    width: 14px !important;
+    height: 14px !important;
+    border: 2px solid #e5e7eb !important;
+    border-top-color: #4f46e5 !important;
+    border-radius: 50% !important;
+    animation: spin 1s linear infinite !important;
+    vertical-align: middle !important;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.time-display {
+    text-align: center !important;
+    color: #6b7280 !important;
+    font-size: 12px !important;
+    margin-top: 4px !important;
+    min-height: 18px !important;
+}
+
 /* 页脚 */
 .footer-info {
     text-align: center !important;
@@ -501,6 +545,12 @@ def build_demo() -> "gr.Blocks":
                 show_copy_button=True,
             )
 
+            # 思考中提示（默认通过 CSS 隐藏，发送时由 JS 显示）
+            thinking_indicator = gr.Markdown(
+                '<span class="thinking-spinner"></span> 模型思考中... <span class="thinking-time">0.0s</span>',
+                elem_classes=["thinking-indicator"],
+            )
+
             # 底部输入区
             with gr.Row(elem_classes=["input-area"]):
                 msg_input = gr.Textbox(
@@ -518,6 +568,9 @@ def build_demo() -> "gr.Blocks":
                     variant="primary",
                     elem_classes=["send-btn"],
                 )
+
+            # 思考耗时显示
+            time_display = gr.Markdown("", elem_classes=["time-display"])
 
             # 底部信息区：推荐问题 + 我能做什么 + 返回门户 + 页脚
             with gr.Column(elem_classes=["bottom-info"]):
@@ -549,16 +602,74 @@ def build_demo() -> "gr.Blocks":
                     '<p class="footer-info">RetailSage Agent v0.1 · 基于 DeepSeek LLM · 数据仅供分析使用</p>',
                 )
 
+        # 注入前端 JS：控制思考中提示的显示、隐藏和计时
+        gr.HTML(
+            """
+            <script>
+            (function() {
+                if (window.retailSageThinking) return;
+                window.retailSageThinking = true;
+
+                window.startThinking = function() {
+                    const el = document.querySelector('.thinking-indicator');
+                    if (el) {
+                        el.style.display = 'flex';
+                        const timeSpan = el.querySelector('.thinking-time');
+                        if (timeSpan) timeSpan.textContent = '0.0s';
+                    }
+                    const input = document.querySelector('.input-box textarea');
+                    const btn = document.querySelector('.send-btn button');
+                    if (input) input.disabled = true;
+                    if (btn) btn.disabled = true;
+
+                    window.thinkingStart = Date.now();
+                    if (window.thinkingTimer) clearInterval(window.thinkingTimer);
+                    window.thinkingTimer = setInterval(function() {
+                        const seconds = ((Date.now() - window.thinkingStart) / 1000).toFixed(1);
+                        const timeSpan = document.querySelector('.thinking-indicator .thinking-time');
+                        if (timeSpan) timeSpan.textContent = seconds + 's';
+                    }, 100);
+                };
+
+                window.stopThinking = function() {
+                    if (window.thinkingTimer) {
+                        clearInterval(window.thinkingTimer);
+                        window.thinkingTimer = null;
+                    }
+                    const el = document.querySelector('.thinking-indicator');
+                    if (el) el.style.display = 'none';
+                    const input = document.querySelector('.input-box textarea');
+                    const btn = document.querySelector('.send-btn button');
+                    if (input) input.disabled = false;
+                    if (btn) btn.disabled = false;
+                };
+            })();
+            </script>
+            """,
+        )
+
         # 事件绑定
         send_btn.click(
             fn=respond,
             inputs=[msg_input, chatbot],
-            outputs=[msg_input, chatbot],
+            outputs=[msg_input, chatbot, time_display],
+            js="startThinking()",
+        ).then(
+            fn=_noop,
+            inputs=None,
+            outputs=[],
+            js="stopThinking()",
         )
         msg_input.submit(
             fn=respond,
             inputs=[msg_input, chatbot],
-            outputs=[msg_input, chatbot],
+            outputs=[msg_input, chatbot, time_display],
+            js="startThinking()",
+        ).then(
+            fn=_noop,
+            inputs=None,
+            outputs=[],
+            js="stopThinking()",
         )
         for btn in suggestion_btns:
             btn.click(
