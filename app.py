@@ -26,6 +26,11 @@ sys.path.insert(0, str(project_dir))
 from dotenv import load_dotenv
 load_dotenv()
 
+# HuggingFace 镜像必须在 gradio / huggingface_hub 被导入之前设置。
+# huggingface_hub.constants 在导入时就会把 HF_ENDPOINT 固化为 ENDPOINT
+# 及 HUGGINGFACE_CO_URL_TEMPLATE，晚于此设置将不生效（仍连 huggingface.co 超时）。
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
 from data_insight.utils.logger import setup_logging
 
 # 初始化日志系统

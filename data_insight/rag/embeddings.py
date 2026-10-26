@@ -31,19 +31,25 @@ def _setup_hf_mirror():
         os.environ["HF_ENDPOINT"] = default_mirror
         print(f"[HF Mirror] 使用镜像源: {default_mirror}")
 
-    # 若 huggingface_hub 已被提前导入，修补其已固化的 ENDPOINT 常量
-    endpoint = os.environ["HF_ENDPOINT"]
-    for mod_name in (
-        "huggingface_hub",
-        "huggingface_hub.constants",
-        "huggingface_hub.utils._http",
-    ):
-        mod = sys.modules.get(mod_name)
-        if mod is not None and hasattr(mod, "ENDPOINT"):
-            try:
-                mod.ENDPOINT = endpoint
-            except Exception:
-                pass
+    # 若 huggingface_hub 已被提前导入，修补其已固化的 ENDPOINT 与 URL 模板。
+    # 注意：hf_hub_url 实际使用 constants.HUGGINGFACE_CO_URL_TEMPLATE 拼接下载地址，
+    # 该模板在 constants.py 导入时就由 ENDPOINT 固化而成，仅改 ENDPOINT 不够。
+    endpoint = os.environ["HF_ENDPOINT"].rstrip("/")
+    url_template = endpoint + "/{repo_id}/resolve/{revision}/{filename}"
+    constants_mod = sys.modules.get("huggingface_hub.constants")
+    if constants_mod is not None:
+        for attr, value in (("ENDPOINT", endpoint), ("HUGGINGFACE_CO_URL_TEMPLATE", url_template)):
+            if hasattr(constants_mod, attr):
+                try:
+                    setattr(constants_mod, attr, value)
+                except Exception:
+                    pass
+    hf_mod = sys.modules.get("huggingface_hub")
+    if hf_mod is not None and hasattr(hf_mod, "ENDPOINT"):
+        try:
+            hf_mod.ENDPOINT = endpoint
+        except Exception:
+            pass
 
 
 # 模块加载时自动设置镜像
