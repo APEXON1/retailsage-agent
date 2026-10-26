@@ -1,7 +1,7 @@
 """
 RetailSage Agent - Web GUI 界面（DeepSeek 风格）
 
-基于 Gradio 的 Web 对话界面，模仿 DeepSeek 简洁设计风格。
+基于 Gradio 的 Web 对话界面，采用 DeepSeek 风格的底部输入框 + 推荐问题设计。
 
 两种运行方式：
 1. 单机直跑（无认证）：`python app.py`，监听 7860，行为与改造前一致；
@@ -181,37 +181,56 @@ def _uid_of(request: "gr.Request | None") -> str:
         return LOCAL_USER
 
 
-def chat_fn(message, history, request: "gr.Request"):
+def respond(message: str, history: list, request: gr.Request):
+    """
+    处理用户发送消息并返回 Assistant 回复。
+    history 采用 Gradio messages 格式：[{"role": "user"/"assistant", "content": "..."}]
+    """
     uid = _uid_of(request)
     logger.info("收到 Web 用户消息: user=%s, 长度=%d 字符", uid, len(message or ""))
 
-    # 未配置 Key 时给出明确指引，而不是抛一整屏堆栈
+    # 未配置 Key 时给出明确指引
     if not LLM_API_KEY:
-        return (
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": (
             "⚠️ 还没有配置 LLM API Key，暂时无法对话。\n\n"
             "请打开项目根目录的 `.env` 文件，填写这一行后重启服务：\n\n"
             "```\nLLM_API_KEY=你的key\n```\n\n"
             "默认接的是 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`）。"
             "如果你想用其他 OpenAI 兼容服务，把 `LLM_BASE_URL` 和 `LLM_MODEL_ID` 一起改掉即可。"
-        )
+        )})
+        return "", history
+
+    if not message or not message.strip():
+        return "", history
 
     try:
-        # 按账号加锁：同一账号串行（Agent 不支持并发 run），不同账号可并行
+        # 按账号加锁：同一账号串行，不同账号可并行
         with _lock_for(uid):
             response = get_agent(uid).run(message)
-        logger.info("Agent 返回结果长度=%d 字符", len(str(response)))
-        return str(response)
+        response_text = str(response)
+        logger.info("Agent 返回结果长度=%d 字符", len(response_text))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": response_text})
     except Exception as e:
         logger.exception("Web 对话处理失败: user=%s, err=%s", uid, e)
-        return f"❌ 发生错误: {e}"
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": f"❌ 发生错误: {e}"})
+
+    return "", history
 
 
-def clear_history(request: "gr.Request"):
+def use_suggestion(text: str):
+    """点击推荐问题时，直接返回该文本用于填充输入框。"""
+    return text
+
+
+def clear_history(request: gr.Request):
     reset_agent(_uid_of(request))
     return []
 
 
-def whoami(request: "gr.Request"):
+def whoami(request: gr.Request):
     uid = _uid_of(request)
     if uid == LOCAL_USER:
         return "👤 单机模式（未启用账号认证）"
@@ -219,142 +238,339 @@ def whoami(request: "gr.Request"):
 
 
 CUSTOM_CSS = """
+/* 整体容器 */
 .gradio-container {
-    max-width: 900px !important;
+    position: relative !important;
+    max-width: 1000px !important;
     margin: auto !important;
+    background: #f9fafb !important;
 }
+
+/* 主面板 */
 .main-panel {
     border: none !important;
     box-shadow: none !important;
+    background: transparent !important;
 }
-.chatbot {
-    border: none !important;
-    border-radius: 12px !important;
-    min-height: 60vh !important;
-}
-.example-card {
-    cursor: pointer !important;
-    border: 1px solid var(--border-color-primary) !important;
-    border-radius: 12px !important;
-    padding: 14px 18px !important;
-    transition: all 0.2s ease !important;
-    background: var(--background-fill-secondary) !important;
-    color: var(--body-text-color) !important;
-    font-size: 14px !important;
-    line-height: 1.5 !important;
-}
-.example-card:hover {
-    border-color: #4f46e5 !important;
-    background: var(--background-fill-primary) !important;
-}
-.welcome-title {
-    text-align: center !important;
-    margin-bottom: 0 !important;
-}
-.welcome-subtitle {
-    text-align: center !important;
-    color: var(--body-text-color-subdued) !important;
-    margin-top: 8px !important;
-}
-.sidebar-btn {
-    border: 1px solid var(--border-color-primary) !important;
-    border-radius: 8px !important;
-    background: var(--button-secondary-background-fill) !important;
-    color: var(--button-secondary-text-color) !important;
-    font-weight: 500 !important;
-    height: 42px !important;
-    max-height: 42px !important;
-    transition: all 0.15s ease !important;
-}
-.sidebar-btn:hover {
-    background: var(--button-secondary-background-fill-hover) !important;
-    border-color: var(--border-color-accent) !important;
-}
-.footer-info {
-    text-align: center !important;
-    color: var(--body-text-color-subdued) !important;
-    font-size: 12px !important;
-    margin-top: 8px !important;
-}
-.sidebar-col {
-    justify-content: flex-start !important;
-    padding-top: 0 !important;
-}
-.main-row {
+
+/* 顶部标题栏 */
+.header-row {
+    display: flex !important;
+    flex-direction: row !important;
     align-items: flex-start !important;
+    justify-content: flex-start !important;
+    padding: 20px 0 8px 8px !important;
+    gap: 12px !important;
+}
+.welcome-title h1 {
+    font-size: 26px !important;
+    font-weight: 600 !important;
+    color: #111827 !important;
+    margin: 0 !important;
+    text-align: left !important;
+    line-height: 1.2 !important;
+}
+.welcome-subtitle p {
+    font-size: 14px !important;
+    color: #6b7280 !important;
+    margin: 4px 0 0 0 !important;
+    text-align: left !important;
+    line-height: 1.4 !important;
 }
 .user-tag {
     font-size: 12px !important;
-    color: var(--body-text-color-subdued) !important;
+    color: #9ca3af !important;
     word-break: break-all !important;
-    margin-bottom: 4px !important;
+    margin-top: 4px !important;
+}
+
+/* 右上角新建对话按钮（与发送按钮同列，内容区右侧对齐） */
+.new-chat-icon {
+    position: absolute !important;
+    top: 24px !important;
+    right: 24px !important;
+    z-index: 1000 !important;
+    border-radius: 8px !important;
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    max-width: 24px !important;
+    min-height: 24px !important;
+    max-height: 24px !important;
+    padding: 0 !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+    transition: all 0.15s ease !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+.new-chat-icon:hover {
+    background: #f5f3ff !important;
+    border-color: #4f46e5 !important;
+    color: #4f46e5 !important;
+}
+.new-chat-icon button {
+    border-radius: 8px !important;
+    width: 24px !important;
+    height: 24px !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* 对话区域 */
+.chatbot {
+    border: none !important;
+    border-radius: 16px !important;
+    background: #ffffff !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+    min-height: 420px !important;
+}
+.chatbot .message-row {
+    padding: 8px 16px !important;
+}
+.chatbot .message.user {
+    background: #4f46e5 !important;
+    color: #ffffff !important;
+    border-radius: 16px 16px 4px 16px !important;
+}
+.chatbot .message.assistant {
+    background: #f3f4f6 !important;
+    color: #111827 !important;
+    border-radius: 16px 16px 16px 4px !important;
+}
+
+/* 底部输入区 */
+.input-area {
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 20px !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
+    padding: 12px 16px !important;
+    margin-top: 16px !important;
+    transition: all 0.2s ease !important;
+}
+.input-area:focus-within {
+    border-color: #4f46e5 !important;
+    box-shadow: 0 4px 24px rgba(79, 70, 229, 0.15) !important;
+}
+.input-box textarea {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    font-size: 15px !important;
+    line-height: 1.5 !important;
+    resize: none !important;
+    background: transparent !important;
+}
+.input-box textarea:focus {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+.send-btn {
+    border-radius: 12px !important;
+    background: #4f46e5 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    transition: all 0.15s ease !important;
+}
+.send-btn:hover {
+    background: #4338ca !important;
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3) !important;
+}
+
+/* 推荐问题 */
+.suggestions-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-top: 10px !important;
+    padding-left: 4px !important;
+    flex-wrap: wrap !important;
+}
+.suggestion-label {
+    color: #9ca3af !important;
+    font-size: 13px !important;
+    white-space: nowrap !important;
+}
+.suggestion-chip {
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 999px !important;
+    color: #4b5563 !important;
+    font-size: 13px !important;
+    padding: 4px 12px !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease !important;
+    white-space: nowrap !important;
+}
+.suggestion-chip:hover {
+    border-color: #4f46e5 !important;
+    color: #4f46e5 !important;
+    background: #f5f3ff !important;
+}
+
+/* 底部信息区 */
+.bottom-info {
+    margin-top: 8px !important;
+}
+.capabilities {
+    text-align: center !important;
+    color: #9ca3af !important;
+    font-size: 12px !important;
+    margin-top: 8px !important;
 }
 .portal-link {
     display: block !important;
     text-align: center !important;
     font-size: 12px !important;
     margin-top: 6px !important;
+    color: #9ca3af !important;
+}
+.portal-link a {
+    color: #6b7280 !important;
+    text-decoration: none !important;
+}
+.portal-link a:hover {
+    color: #4f46e5 !important;
+}
+
+/* 页脚 */
+.footer-info {
+    text-align: center !important;
+    color: #9ca3af !important;
+    font-size: 12px !important;
+    margin-top: 16px !important;
 }
 """
+
+
+# 推荐问题列表
+SUGGESTIONS = [
+    "分析华东区最近30天的销售趋势",
+    "GMV是什么意思？",
+    "各门店业绩排名如何？",
+    "帮我生成一份上周业绩周报",
+    "为什么最近一周业绩下降了？",
+]
 
 
 def build_demo() -> "gr.Blocks":
     """构建 UI。门户托管与单机直跑共用这一份，避免两套界面走样。"""
     with gr.Blocks(
         title="RetailSage Agent",
+        css=CUSTOM_CSS,
         fill_height=True,
     ) as demo:
 
-        with gr.Row(equal_height=True, elem_classes=["main-row"]):
-            with gr.Column(scale=1, min_width=200, elem_classes=["sidebar-col"]):
-                user_tag = gr.Markdown("", elem_classes=["user-tag"])
-                new_chat_btn = gr.Button(
-                    "✏️ 新建对话",
-                    size="sm",
-                    elem_classes=["sidebar-btn"],
+        with gr.Column(elem_classes=["main-panel"]):
+            # 顶部标题栏：左侧标题，右侧新建对话
+            with gr.Row(elem_classes=["header-row"]):
+                with gr.Column(scale=8):
+                    gr.Markdown(
+                        """
+                        <div class="welcome-title">
+                            <h1>📊 RetailSage Agent</h1>
+                        </div>
+                        <div class="welcome-subtitle">
+                            <p>零售/电商数据分析智能体 — 用对话的方式从数据中获得洞察</p>
+                        </div>
+                        """,
+                    )
+                    user_tag = gr.Markdown("", elem_classes=["user-tag"])
+                with gr.Column(scale=1):
+                    new_chat_btn = gr.Button(
+                        "➕",
+                        size="sm",
+                        elem_classes=["new-chat-icon"],
+                        variant="secondary",
+                    )
+
+            # 对话显示区（messages 格式）
+            chatbot = gr.Chatbot(
+                label="",
+                type="messages",
+                elem_classes=["chatbot"],
+                height=480,
+                show_copy_button=True,
+            )
+
+            # 底部输入区
+            with gr.Row(elem_classes=["input-area"]):
+                msg_input = gr.Textbox(
+                    placeholder="输入你的数据分析问题，例如：华东区上周销售趋势如何？",
+                    show_label=False,
+                    container=False,
+                    elem_classes=["input-box"],
+                    lines=1,
+                    scale=8,
+                    submit_btn=False,
                 )
+                send_btn = gr.Button(
+                    "发送",
+                    scale=1,
+                    variant="primary",
+                    elem_classes=["send-btn"],
+                )
+
+            # 底部信息区：推荐问题 + 我能做什么 + 返回门户 + 页脚
+            with gr.Column(elem_classes=["bottom-info"]):
+                with gr.Row(elem_classes=["suggestions-row"]):
+                    gr.Markdown('<span class="suggestion-label">💡 试试：</span>')
+                    suggestion_btns = []
+                    for text in SUGGESTIONS:
+                        btn = gr.Button(
+                            text,
+                            size="sm",
+                            elem_classes=["suggestion-chip"],
+                            min_width=80,
+                        )
+                        suggestion_btns.append(btn)
+
                 gr.Markdown(
                     """
-                    ---
-                    ### 💡 我能做什么
-                    - 📊 数据查询：自然语言查销售额、订单量
-                    - 🔍 归因分析：找出业绩变化的原因
-                    - 📈 趋势分析：发现数据中的趋势
-                    - 📋 报告生成：一键生成分析报告
-                    - 📖 知识问答：解释业务指标含义
+                    <p class="capabilities">
+                        我能做什么：📊 自然语言查数据 · 🔍 业绩归因分析 · 📈 趋势与异常发现 · 📋 一键生成报告 · 📖 业务指标解释
+                    </p>
                     """,
-                    elem_id="sidebar-info",
                 )
+
                 gr.HTML(
-                    '<a class="portal-link" href="http://127.0.0.1:8000/" target="_self">'
-                    '← 返回门户</a>',
-                )
-
-            with gr.Column(scale=4):
-                gr.Markdown(
-                    """
-                    <div class="welcome-title">
-                        <h1 style="font-size: 28px; font-weight: 600; color: var(--body-text-color);">📊 RetailSage Agent</h1>
-                    </div>
-                    <div class="welcome-subtitle">
-                        <p style="font-size: 15px;">零售/电商数据分析智能体 — 用对话的方式从数据中获得洞察</p>
-                    </div>
-                    """,
-                )
-
-                chatbot = gr.ChatInterface(
-                    fn=chat_fn,
-                    # 默认 concurrency_limit="default" → queue 全局只放 1 个，
-                    # 多账号会互相排队，这里显式放宽
-                    concurrency_limit=8,
-                    chatbot=gr.Chatbot(show_label=False, elem_classes=["chatbot"]),
+                    '<p class="portal-link"><a href="http://127.0.0.1:8000/" target="_self">← 返回门户</a></p>',
                 )
 
                 gr.Markdown(
                     '<p class="footer-info">RetailSage Agent v0.1 · 基于 DeepSeek LLM · 数据仅供分析使用</p>',
                 )
 
-        new_chat_btn.click(clear_history, outputs=chatbot.chatbot)
+        # 事件绑定
+        send_btn.click(
+            fn=respond,
+            inputs=[msg_input, chatbot],
+            outputs=[msg_input, chatbot],
+        )
+        msg_input.submit(
+            fn=respond,
+            inputs=[msg_input, chatbot],
+            outputs=[msg_input, chatbot],
+        )
+        for btn in suggestion_btns:
+            btn.click(
+                fn=use_suggestion,
+                inputs=[btn],
+                outputs=[msg_input],
+            )
+        new_chat_btn.click(
+            fn=clear_history,
+            inputs=[],
+            outputs=[chatbot],
+        )
         demo.load(whoami, outputs=user_tag)
         demo.queue(default_concurrency_limit=8)
 
@@ -372,5 +588,4 @@ if __name__ == "__main__":
         server_port=7860,
         share=False,
         inbrowser=True,
-        css=CUSTOM_CSS,
     )
