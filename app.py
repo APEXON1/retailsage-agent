@@ -234,7 +234,7 @@ def use_suggestion(text: str):
 
 def _noop():
     """用于 .then 链中触发 JS 的空函数。"""
-    return None
+    return ()
 
 
 def clear_history(request: gr.Request):
@@ -617,10 +617,6 @@ def build_demo() -> "gr.Blocks":
                         const timeSpan = el.querySelector('.thinking-time');
                         if (timeSpan) timeSpan.textContent = '0.0s';
                     }
-                    const input = document.querySelector('.input-box textarea');
-                    const btn = document.querySelector('.send-btn button');
-                    if (input) input.disabled = true;
-                    if (btn) btn.disabled = true;
 
                     window.thinkingStart = Date.now();
                     if (window.thinkingTimer) clearInterval(window.thinkingTimer);
@@ -629,6 +625,17 @@ def build_demo() -> "gr.Blocks":
                         const timeSpan = document.querySelector('.thinking-indicator .thinking-time');
                         if (timeSpan) timeSpan.textContent = seconds + 's';
                     }, 100);
+
+                    // 监听 chatbot 内容变化，模型返回后自动停止计时
+                    if (!window.thinkingObserver) {
+                        const chatbot = document.querySelector('.chatbot');
+                        if (chatbot) {
+                            window.thinkingObserver = new MutationObserver(function() {
+                                setTimeout(stopThinking, 200);
+                            });
+                            window.thinkingObserver.observe(chatbot, { childList: true, subtree: true });
+                        }
+                    }
                 };
 
                 window.stopThinking = function() {
@@ -638,10 +645,6 @@ def build_demo() -> "gr.Blocks":
                     }
                     const el = document.querySelector('.thinking-indicator');
                     if (el) el.style.display = 'none';
-                    const input = document.querySelector('.input-box textarea');
-                    const btn = document.querySelector('.send-btn button');
-                    if (input) input.disabled = false;
-                    if (btn) btn.disabled = false;
                 };
             })();
             </script>
@@ -654,22 +657,12 @@ def build_demo() -> "gr.Blocks":
             inputs=[msg_input, chatbot],
             outputs=[msg_input, chatbot, time_display],
             js="startThinking()",
-        ).then(
-            fn=_noop,
-            inputs=None,
-            outputs=[],
-            js="stopThinking()",
         )
         msg_input.submit(
             fn=respond,
             inputs=[msg_input, chatbot],
             outputs=[msg_input, chatbot, time_display],
             js="startThinking()",
-        ).then(
-            fn=_noop,
-            inputs=None,
-            outputs=[],
-            js="stopThinking()",
         )
         for btn in suggestion_btns:
             btn.click(
