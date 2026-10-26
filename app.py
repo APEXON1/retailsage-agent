@@ -10,6 +10,8 @@ RetailSage Agent - Web GUI 界面（DeepSeek 风格）
    与记忆 / 图表 / 报告目录（内置知识库与业务库仍全站共享）。
 """
 
+import asyncio
+import html as _html
 import logging
 import os
 import re
@@ -102,6 +104,7 @@ MAX_CACHED_AGENTS = 5         # 常驻上限（每个 Agent 自带一个向量�
 
 _AGENTS: "OrderedDict[str, object]" = OrderedDict()
 _LOCKS: dict[str, threading.Lock] = {}
+_ASYNC_LOCKS: dict[str, "asyncio.Lock"] = {}
 _GUARD = threading.Lock()
 
 
@@ -115,12 +118,29 @@ def _lock_for(user_id: str) -> threading.Lock:
         return _LOCKS.setdefault(user_id, threading.Lock())
 
 
+def _alock_for(user_id: str) -> "asyncio.Lock":
+    """同账号串行的异步锁。
+
+    流式对话在 await 处会持续让出事件循环，如果沿用 threading.Lock，
+    同账号并发请求会在 loop 线程里阻塞式等待，直接把整个事件循环卡死。
+    该函数只在事件循环线程内被调用，故无需 _GUARD 保护。
+    """
+    lock = _ASYNC_LOCKS.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _ASYNC_LOCKS[user_id] = lock
+    return lock
+
+
 def _evict_locked() -> None:
     """超出上限时淘汰最久未用的实例（跳过正在跑的）。调用方需持有 _GUARD。"""
     while len(_AGENTS) > MAX_CACHED_AGENTS:
         for uid in list(_AGENTS.keys()):
             lock = _LOCKS.get(uid)
             if lock is not None and lock.locked():
+                continue
+            alock = _ASYNC_LOCKS.get(uid)
+            if alock is not None and alock.locked():
                 continue
             _AGENTS.pop(uid, None)
             logger.info("淘汰空闲 Agent 实例: user=%s", uid)
@@ -196,15 +216,36 @@ THINKING_HTML = (
 )
 
 
-def respond(message: str, history: list, request: gr.Request):
+def _fmt_stream_bubble(step: int, tool: str, text: str) -> str:
+    """把流式进度渲染成 assistant 气泡内的 HTML。"""
+    bits = ["模型思考中..."]
+    if step:
+        bits.append(f"第 {step} 步")
+    if tool:
+        bits.append(f"调用 {tool}")
+    head = " · ".join(bits)
+    body = (
+        '<div class="thinking-bubble">'
+        '<span class="thinking-spinner"></span>'
+        f'<span class="thinking-text">{_html.escape(head)}</span>'
+        '</div>'
+    )
+    if text:
+        body += f'<div class="stream-text">{_html.escape(text)}</div>'
+    return body
+
+
+async def respond(message: str, history: list, request: gr.Request):
     """
-    处理用户发送消息并返回 Assistant 回复（generator 实时渲染）。
+    处理用户发送消息并以流式方式返回 Assistant 回复（async generator）。
     history 采用 Gradio messages 格式：[{"role": "user"/"assistant", "content": "..."}]
     每次 yield 返回 3 元组：(msg_input_value, history, time_text)。
 
-    实时渲染流程：
-    1. 立即把用户消息上屏，并在 assistant 气泡内显示"模型思考中"动画；
-    2. Agent 返回后，用真实回答替换掉思考动画气泡。
+    流式流程：
+    1. 立即把用户消息上屏，assistant 气泡内显示思考动画；
+    2. 消费 ReActAgent.arun_stream 的流式事件，实时把模型输出 / 步骤 / 工具调用
+       渲染进 assistant 气泡；
+    3. 收到 AGENT_FINISH 后，用干净的最终答案替换流式气泡。
     """
     uid = _uid_of(request)
     logger.info("收到 Web 用户消息: user=%s, 长度=%d 字符", uid, len(message or ""))
@@ -228,29 +269,70 @@ def respond(message: str, history: list, request: gr.Request):
         yield "", history, ""
         return
 
-    # 第一步：立即上屏用户消息 + assistant 气泡内显示"思考中"动画
+    # 第一步：立即上屏用户消息 + 思考动画
     history = history + [{"role": "user", "content": message}]
-    thinking_history = history + [{"role": "assistant", "content": THINKING_HTML}]
-    yield "", thinking_history, ""
+    yield "", history + [{"role": "assistant", "content": THINKING_HTML}], ""
 
     start_time = time.time()
+    current_step = 0
+    last_tool = ""
+    stream_text = ""
+    final_answer = None
+    error_text = None
+    last_yield = 0.0
+
+    def snapshot() -> list:
+        return history + [{
+            "role": "assistant",
+            "content": _fmt_stream_bubble(current_step, last_tool, stream_text),
+        }]
+
     try:
-        # 按账号加锁：同一账号串行，不同账号可并行
-        with _lock_for(uid):
-            response = get_agent(uid).run(message)
-        response_text = str(response)
+        async with _alock_for(uid):
+            agent = await asyncio.to_thread(get_agent, uid)
+            async for event in agent.arun_stream(message):
+                etype = getattr(event.type, "value", str(event.type))
+                data = event.data or {}
+
+                if etype == "step_start":
+                    current_step = data.get("step", current_step)
+                    last_tool = ""
+                    stream_text = ""
+                elif etype == "llm_chunk":
+                    stream_text += data.get("chunk", "") or ""
+                elif etype == "tool_call_finish":
+                    last_tool = data.get("tool_name", last_tool) or last_tool
+                    stream_text = ""
+                elif etype == "agent_finish":
+                    final_answer = data.get("result") or stream_text or final_answer
+                elif etype == "error":
+                    error_text = data.get("error", "未知错误")
+                else:
+                    continue
+
+                # 节流：LLM 分块很密，约 60ms 刷新一次即可，步骤/工具事件立即刷新
+                now = time.time()
+                if etype in ("step_start", "tool_call_finish") or now - last_yield >= 0.06:
+                    last_yield = now
+                    yield "", snapshot(), ""
+
         elapsed = time.time() - start_time
-        logger.info("Agent 返回结果长度=%d 字符，耗时=%.2f秒", len(response_text), elapsed)
-        final_history = history + [{"role": "assistant", "content": response_text}]
-        time_text = f"✅ 思考完成，用时 {elapsed:.1f} 秒"
+        if error_text and not final_answer:
+            answer = f"❌ 发生错误: {error_text}"
+            time_text = f"⚠️ 处理失败，用时 {elapsed:.1f} 秒"
+            logger.warning("Agent 流式返回错误: user=%s, err=%s", uid, error_text)
+        else:
+            answer = final_answer or "（没有获取到回答）"
+            time_text = f"✅ 思考完成，用时 {elapsed:.1f} 秒"
+            logger.info("Agent 流式完成，答案长度=%d 字符，耗时=%.2f秒", len(str(answer)), elapsed)
     except Exception as e:
         elapsed = time.time() - start_time
         logger.exception("Web 对话处理失败: user=%s, err=%s", uid, e)
-        final_history = history + [{"role": "assistant", "content": f"❌ 发生错误: {e}"}]
+        answer = f"❌ 发生错误: {e}"
         time_text = f"⚠️ 处理失败，用时 {elapsed:.1f} 秒"
 
-    # 第二步：用真实回答替换"思考中"气泡
-    yield "", final_history, time_text
+    # 用干净的最终答案替换流式气泡
+    yield "", history + [{"role": "assistant", "content": str(answer)}], time_text
 
 
 def use_suggestion(text: str):
@@ -367,12 +449,29 @@ CUSTOM_CSS = """
 .chatbot .message-row {
     padding: 8px 16px !important;
 }
-.chatbot .message.user {
+/* 用户气泡：与"发送"按钮一致的紫底白字（#4f46e5） */
+.chatbot .message.user,
+.chatbot .user {
     background: #4f46e5 !important;
+    border-color: #4f46e5 !important;
     color: #ffffff !important;
     border-radius: 16px 16px 4px 16px !important;
 }
-.chatbot .message.assistant {
+/* Gradio 内层 markdown/文本容器默认是深色字，需一并强制为白色 */
+.chatbot .message.user .prose,
+.chatbot .message.user .prose *,
+.chatbot .message.user .flex-wrap,
+.chatbot .message.user .flex-wrap *,
+.chatbot .user .prose,
+.chatbot .user .prose *,
+.chatbot .user .flex-wrap,
+.chatbot .user .flex-wrap * {
+    color: #ffffff !important;
+    text-align: left !important;
+}
+/* 机器人气泡 */
+.chatbot .message.bot,
+.chatbot .bot {
     background: #f3f4f6 !important;
     color: #111827 !important;
     border-radius: 16px 16px 16px 4px !important;
@@ -486,6 +585,15 @@ CUSTOM_CSS = """
 .thinking-text {
     color: #6b7280 !important;
     font-size: 14px !important;
+}
+/* 流式输出文本（实时追加在思考动画下方） */
+.stream-text {
+    margin-top: 8px !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    color: #111827 !important;
+    font-size: 14px !important;
+    line-height: 1.6 !important;
 }
 .thinking-spinner {
     display: inline-block !important;
