@@ -187,34 +187,51 @@ def _uid_of(request: "gr.Request | None") -> str:
         return LOCAL_USER
 
 
+# assistant 气泡内的"思考中"动画（实时渲染时作为占位内容）
+THINKING_HTML = (
+    '<div class="thinking-bubble">'
+    '<span class="thinking-spinner"></span>'
+    '<span class="thinking-text">模型思考中...</span>'
+    '</div>'
+)
+
+
 def respond(message: str, history: list, request: gr.Request):
     """
-    处理用户发送消息并返回 Assistant 回复（使用 generator 实现思考中提示）。
+    处理用户发送消息并返回 Assistant 回复（generator 实时渲染）。
     history 采用 Gradio messages 格式：[{"role": "user"/"assistant", "content": "..."}]
-    返回 4 元组：(msg_input_value, history, time_text, thinking_update)。
+    每次 yield 返回 3 元组：(msg_input_value, history, time_text)。
+
+    实时渲染流程：
+    1. 立即把用户消息上屏，并在 assistant 气泡内显示"模型思考中"动画；
+    2. Agent 返回后，用真实回答替换掉思考动画气泡。
     """
     uid = _uid_of(request)
     logger.info("收到 Web 用户消息: user=%s, 长度=%d 字符", uid, len(message or ""))
 
     # 未配置 Key 时给出明确指引
     if not LLM_API_KEY:
-        history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": (
-            "⚠️ 还没有配置 LLM API Key，暂时无法对话。\n\n"
-            "请打开项目根目录的 `.env` 文件，填写这一行后重启服务：\n\n"
-            "```\nLLM_API_KEY=你的key\n```\n\n"
-            "默认接的是 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`）。"
-            "如果你想用其他 OpenAI 兼容服务，把 `LLM_BASE_URL` 和 `LLM_MODEL_ID` 一起改掉即可。"
-        )})
-        yield "", history, "", gr.update(visible=False)
+        history = history + [
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": (
+                "⚠️ 还没有配置 LLM API Key，暂时无法对话。\n\n"
+                "请打开项目根目录的 `.env` 文件，填写这一行后重启服务：\n\n"
+                "```\nLLM_API_KEY=你的key\n```\n\n"
+                "默认接的是 DeepSeek（`LLM_BASE_URL=https://api.deepseek.com`）。"
+                "如果你想用其他 OpenAI 兼容服务，把 `LLM_BASE_URL` 和 `LLM_MODEL_ID` 一起改掉即可。"
+            )},
+        ]
+        yield "", history, ""
         return
 
     if not message or not message.strip():
-        yield "", history, "", gr.update(visible=False)
+        yield "", history, ""
         return
 
-    # 第一步：清空输入框并显示"思考中"
-    yield "", history, "", gr.update(visible=True)
+    # 第一步：立即上屏用户消息 + assistant 气泡内显示"思考中"动画
+    history = history + [{"role": "user", "content": message}]
+    thinking_history = history + [{"role": "assistant", "content": THINKING_HTML}]
+    yield "", thinking_history, ""
 
     start_time = time.time()
     try:
@@ -224,18 +241,16 @@ def respond(message: str, history: list, request: gr.Request):
         response_text = str(response)
         elapsed = time.time() - start_time
         logger.info("Agent 返回结果长度=%d 字符，耗时=%.2f秒", len(response_text), elapsed)
-        history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": response_text})
+        final_history = history + [{"role": "assistant", "content": response_text}]
         time_text = f"✅ 思考完成，用时 {elapsed:.1f} 秒"
     except Exception as e:
         elapsed = time.time() - start_time
         logger.exception("Web 对话处理失败: user=%s, err=%s", uid, e)
-        history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": f"❌ 发生错误: {e}"})
+        final_history = history + [{"role": "assistant", "content": f"❌ 发生错误: {e}"}]
         time_text = f"⚠️ 处理失败，用时 {elapsed:.1f} 秒"
 
-    # 第二步：返回结果并隐藏"思考中"
-    yield "", history, time_text, gr.update(visible=False)
+    # 第二步：用真实回答替换"思考中"气泡
+    yield "", final_history, time_text
 
 
 def use_suggestion(text: str):
@@ -459,22 +474,18 @@ CUSTOM_CSS = """
     color: #4f46e5 !important;
 }
 
-/* 思考中提示 */
-.thinking-indicator {
-    text-align: center !important;
-    color: #6b7280 !important;
-    font-size: 14px !important;
-    margin: 12px 0 !important;
+/* 思考中动画（渲染在 assistant 气泡内） */
+.thinking-bubble {
     display: flex !important;
     align-items: center !important;
-    justify-content: center !important;
     gap: 8px !important;
 }
-.thinking-indicator .wrap {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    gap: 8px !important;
+.thinking-bubble p {
+    margin: 0 !important;
+}
+.thinking-text {
+    color: #6b7280 !important;
+    font-size: 14px !important;
 }
 .thinking-spinner {
     display: inline-block !important;
@@ -557,13 +568,6 @@ def build_demo() -> "gr.Blocks":
                 show_copy_button=True,
             )
 
-            # 思考中提示（默认隐藏，发送时由后端显示）
-            thinking_indicator = gr.Markdown(
-                '<span class="thinking-spinner"></span> 模型思考中...',
-                elem_classes=["thinking-indicator"],
-                visible=False,
-            )
-
             # 底部输入区
             with gr.Row(elem_classes=["input-area"]):
                 msg_input = gr.Textbox(
@@ -619,12 +623,12 @@ def build_demo() -> "gr.Blocks":
         send_btn.click(
             fn=respond,
             inputs=[msg_input, chatbot],
-            outputs=[msg_input, chatbot, time_display, thinking_indicator],
+            outputs=[msg_input, chatbot, time_display],
         )
         msg_input.submit(
             fn=respond,
             inputs=[msg_input, chatbot],
-            outputs=[msg_input, chatbot, time_display, thinking_indicator],
+            outputs=[msg_input, chatbot, time_display],
         )
         for btn in suggestion_btns:
             btn.click(
