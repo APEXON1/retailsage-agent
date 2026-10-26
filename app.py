@@ -15,6 +15,7 @@ import html as _html
 import logging
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -42,9 +43,10 @@ logger = logging.getLogger(__name__)
 import gradio as gr
 from data_insight.config import (
     DB_CONFIG, DEFAULT_DB_TYPE, LLM_MODEL_ID, LLM_API_KEY, LLM_BASE_URL,
-    KNOWLEDGE_DIR, OUTPUT_DIR, MEMORY_DIR, MAX_STEPS
+    KNOWLEDGE_DIR, OUTPUT_DIR, MEMORY_DIR, MAX_STEPS, EMBEDDING_MODEL
 )
 from data_insight.agents.insight_agent import InsightAgent
+from data_insight.tools import data_importer
 
 
 # ==================== 数据库表结构说明 ====================
@@ -113,6 +115,59 @@ def _slug(user_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", user_id or LOCAL_USER) or LOCAL_USER
 
 
+# ---- 按账号隔离的目录 / 数据库 ----
+def _user_dir(user_id: str) -> Path:
+    return Path(MEMORY_DIR) / "users" / _slug(user_id)
+
+
+def _user_db_path(user_id: str) -> Path:
+    """该账号独立的 SQLite 文件路径。"""
+    return _user_dir(user_id) / "data.db"
+
+
+def _user_kb_dir(user_id: str) -> Path:
+    """该账号上传的知识文档目录。"""
+    return _user_dir(user_id) / "uploads" / "kb"
+
+
+def ensure_user_db(user_id: str) -> str:
+    """确保该账号有独立 SQLite；首次从共享基础库复制一份（保留 orders 等基础数据）。"""
+    user_db = _user_db_path(user_id)
+    user_db.parent.mkdir(parents=True, exist_ok=True)
+    if not user_db.exists():
+        base = DB_CONFIG.get("sqlite", {}).get("database")
+        if base and Path(base).exists():
+            shutil.copy(base, user_db)
+            logger.info("为用户 %s 复制基础数据库 -> %s", user_id, user_db)
+        else:
+            user_db.touch()
+            logger.info("基础库缺失，为用户 %s 创建空数据库 -> %s", user_id, user_db)
+    return str(user_db)
+
+
+def _rebuild_user_kb(user_id: str) -> int:
+    """重建该账号的知识索引（共享基础库 + 上传目录），返回索引条数。
+
+    - 若该账号 Agent 已创建：直接重建其 rag_tool（同时刷新内存 BM25 与持久化向量库）；
+    - 否则用独立 RAGTool 落盘（不依赖 LLM），Agent 之后创建时会再从源文件干净重建。
+    """
+    with _GUARD:
+        agent = _AGENTS.get(user_id)
+    rag = getattr(agent, "rag_tool", None) if agent is not None else None
+    if rag is None:
+        from data_insight.rag.rag_tool import RAGTool
+        user_memory = _user_dir(user_id)
+        rag = RAGTool(
+            knowledge_dir=str(KNOWLEDGE_DIR),
+            vector_store_dir=str(user_memory / "vector_store"),
+            embedding_model=EMBEDDING_MODEL,
+            llm=None,
+            extra_knowledge_dirs=[str(_user_kb_dir(user_id))],
+        )
+    rag.rebuild_index()
+    return rag.vector_store.get_count()
+
+
 def _lock_for(user_id: str) -> threading.Lock:
     with _GUARD:
         return _LOCKS.setdefault(user_id, threading.Lock())
@@ -161,11 +216,19 @@ def get_agent(user_id: str):
         slug = _slug(uid)
         user_memory = Path(MEMORY_DIR) / "users" / slug
         user_output = Path(OUTPUT_DIR) / "users" / slug
+        user_kb = user_memory / "uploads" / "kb"
         user_memory.mkdir(parents=True, exist_ok=True)
         user_output.mkdir(parents=True, exist_ok=True)
+        user_kb.mkdir(parents=True, exist_ok=True)
 
         logger.info("开始为用户 %s 初始化 Agent，数据库类型=%s", uid, DEFAULT_DB_TYPE)
-        db_config = DB_CONFIG.get(DEFAULT_DB_TYPE, {})
+
+        # 数据库按账号隔离：SQLite 每人一份副本（首次从共享基础库复制），
+        # 用户上传的表只进自己的库，互不影响；其它数据库类型暂共享。
+        if DEFAULT_DB_TYPE == "sqlite":
+            db_config = {"database": ensure_user_db(uid)}
+        else:
+            db_config = DB_CONFIG.get(DEFAULT_DB_TYPE, {})
 
         agent = InsightAgent.create(
             db_config=db_config,
@@ -175,8 +238,9 @@ def get_agent(user_id: str):
             output_dir=str(user_output),
             memory_dir=str(user_memory),
             max_steps=MAX_STEPS,
-            # 知识库与业务库全站共享，不要按用户各建一份
-            vector_store_dir=str(Path(MEMORY_DIR) / "vector_store"),
+            # 向量库按账号隔离；索引来源 = 共享基础知识库 + 该用户上传目录
+            vector_store_dir=str(user_memory / "vector_store"),
+            extra_knowledge_dirs=[str(user_kb)],
             trace_enabled=False,
         )
         _AGENTS[uid] = agent
@@ -350,6 +414,91 @@ def whoami(request: gr.Request):
     if uid == LOCAL_USER:
         return "👤 单机模式（未启用账号认证）"
     return f"👤 当前账号：`{uid}`"
+
+
+# 上传模式（与面板里 Radio 选项文案一致）
+MODE_DB = "📊 导入数据库（CSV / Excel）"
+MODE_KB = "📚 加入知识库（PDF / Word / TXT / MD）"
+
+
+def toggle_upload_panel(opened: bool):
+    """+ 号按钮：展开 / 收起上传面板。"""
+    opened = not bool(opened)
+    return opened, gr.Column(visible=opened)
+
+
+def handle_upload(mode: str, files, request: gr.Request):
+    """处理上传：按模式导入数据库或加入知识库。返回 (状态markdown, 清空文件组件)。"""
+    uid = _uid_of(request)
+
+    # gr.File(multiple) 在 filepath 模式下返回 list[str]；单个可能为 str
+    if files is None:
+        files = []
+    if isinstance(files, str):
+        files = [files]
+    files = [f for f in files if f]
+
+    if not files:
+        return "⚠️ 请先选择要上传的文件。", gr.File(value=None)
+
+    logger.info("收到上传: user=%s, mode=%s, 文件数=%d", uid, mode, len(files))
+    mode = mode or ""
+
+    # ---- 模式一：导入数据库 ----
+    if mode.startswith("📊") or "数据库" in mode:
+        db_path = ensure_user_db(uid)
+        ok = 0
+        last_table = None
+        lines = []
+        for f in files:
+            name = os.path.basename(f)
+            try:
+                df = data_importer.read_table_file(f)
+                table = data_importer.sanitize_table_name(name)
+                rows, cols = data_importer.import_to_sqlite(df, table, db_path)
+                ok += 1
+                last_table = table
+                lines.append(f"✅ `{name}` → 表 `{table}`（{rows} 行 / {len(cols)} 列）")
+            except Exception as e:
+                logger.warning("导入失败 %s: %s", name, e)
+                lines.append(f"❌ `{name}` 导入失败：{e}")
+        if ok:
+            head = (
+                f"已导入 {ok}/{len(files)} 个文件到数据库 `{os.path.basename(db_path)}`。\n\n"
+                f"现在可以直接问我，例如“统计 `{last_table}` 的行数”或“看看 `{last_table}` 前几行”。"
+            )
+        else:
+            head = f"导入完成，但没有文件成功入库（共 {len(files)} 个）。"
+        return head + "\n\n" + "\n".join(lines), gr.File(value=None)
+
+    # ---- 模式二：加入知识库 ----
+    kb_dir = _user_kb_dir(uid)
+    kb_dir.mkdir(parents=True, exist_ok=True)
+    saved = []
+    lines = []
+    for f in files:
+        name = os.path.basename(f)
+        if not data_importer.is_knowledge_file(f):
+            lines.append(f"⚠️ `{name}` 不是支持的文档格式（PDF/Word/TXT/MD/CSV/JSON），已跳过")
+            continue
+        try:
+            shutil.copy2(f, kb_dir / name)
+            saved.append(name)
+            lines.append(f"📄 已保存 `{name}`")
+        except Exception as e:
+            logger.warning("保存知识文档失败 %s: %s", name, e)
+            lines.append(f"❌ `{name}` 保存失败：{e}")
+
+    if not saved:
+        return "⚠️ 没有文件被成功保存到知识库。\n\n" + "\n".join(lines), gr.File(value=None)
+
+    try:
+        count = _rebuild_user_kb(uid)
+        head = f"已加入知识库 {len(saved)} 个文档，当前索引共 {count} 条。可以直接就文档内容提问。"
+    except Exception as e:
+        logger.warning("重建知识索引失败: %s", e)
+        head = f"已保存 {len(saved)} 个文档，但索引重建失败：{e}（将在下次对话时重试）。"
+    return head + "\n\n" + "\n".join(lines), gr.File(value=None)
 
 
 CUSTOM_CSS = """
@@ -616,6 +765,33 @@ CUSTOM_CSS = """
     min-height: 18px !important;
 }
 
+/* 上传面板 */
+.upload-panel {
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06) !important;
+    padding: 14px 16px !important;
+    margin: 12px 0 4px 0 !important;
+    gap: 8px !important;
+}
+.upload-title {
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    color: #111827 !important;
+}
+.upload-status {
+    font-size: 13px !important;
+    color: #374151 !important;
+    line-height: 1.6 !important;
+}
+.upload-status p {
+    margin: 2px 0 !important;
+}
+.upload-actions {
+    margin-top: 4px !important;
+}
+
 /* 页脚 */
 .footer-info {
     text-align: center !important;
@@ -645,7 +821,7 @@ def build_demo() -> "gr.Blocks":
     ) as demo:
 
         with gr.Column(elem_classes=["main-panel"]):
-            # 顶部标题栏：左侧标题，右侧新建对话
+            # 顶部标题栏：左侧标题，右侧 + 号（上传入口）
             with gr.Row(elem_classes=["header-row"]):
                 with gr.Column(scale=8):
                     gr.Markdown(
@@ -660,7 +836,7 @@ def build_demo() -> "gr.Blocks":
                     )
                     user_tag = gr.Markdown("", elem_classes=["user-tag"])
                 with gr.Column(scale=1):
-                    new_chat_btn = gr.Button(
+                    plus_btn = gr.Button(
                         "➕",
                         size="sm",
                         elem_classes=["new-chat-icon"],
@@ -675,6 +851,36 @@ def build_demo() -> "gr.Blocks":
                 height=480,
                 show_copy_button=True,
             )
+
+            # 上传面板（点击 + 号展开 / 收起）
+            panel_state = gr.State(False)
+            with gr.Column(elem_classes=["upload-panel"], visible=False) as upload_panel:
+                gr.Markdown('<div class="upload-title">📎 上传文件</div>')
+                upload_mode = gr.Radio(
+                    choices=[MODE_DB, MODE_KB],
+                    value=MODE_DB,
+                    label="上传类型",
+                    elem_classes=["upload-mode"],
+                )
+                upload_files = gr.File(
+                    label="选择文件（可多选）",
+                    file_count="multiple",
+                    type="filepath",
+                    elem_classes=["upload-file"],
+                )
+                with gr.Row(elem_classes=["upload-actions"]):
+                    do_upload_btn = gr.Button(
+                        "⬆️ 上传并处理",
+                        variant="primary",
+                        scale=2,
+                        elem_classes=["send-btn"],
+                    )
+                    new_chat_btn2 = gr.Button(
+                        "🗑 新建对话",
+                        variant="secondary",
+                        scale=1,
+                    )
+                upload_status = gr.Markdown("", elem_classes=["upload-status"])
 
             # 底部输入区
             with gr.Row(elem_classes=["input-area"]):
@@ -744,10 +950,20 @@ def build_demo() -> "gr.Blocks":
                 inputs=[btn],
                 outputs=[msg_input],
             )
-        new_chat_btn.click(
+        new_chat_btn2.click(
             fn=clear_history,
             inputs=[],
             outputs=[chatbot],
+        )
+        plus_btn.click(
+            fn=toggle_upload_panel,
+            inputs=[panel_state],
+            outputs=[panel_state, upload_panel],
+        )
+        do_upload_btn.click(
+            fn=handle_upload,
+            inputs=[upload_mode, upload_files],
+            outputs=[upload_status, upload_files],
         )
         demo.load(whoami, outputs=user_tag)
         demo.queue(default_concurrency_limit=8)

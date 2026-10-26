@@ -11,6 +11,11 @@ anthropic
 # === 数据处理 ===
 pandas
 numpy
+openpyxl
+
+# === 文档解析（知识库上传：PDF / Word）===
+pypdf
+docx2txt
 
 # === 数据库连接 ===
 sqlalchemy

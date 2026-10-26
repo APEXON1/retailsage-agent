@@ -1,7 +1,7 @@
 """
 文档加载器 - 从多种格式加载知识文档
 
-支持 JSON、Markdown、CSV 等格式的文档加载。
+支持 JSON、Markdown、TXT、CSV、PDF、Word(docx) 等格式的文档加载。
 """
 
 import os
@@ -28,6 +28,8 @@ class DocumentLoader:
             ".md": self._load_markdown,
             ".txt": self._load_text,
             ".csv": self._load_csv,
+            ".pdf": self._load_pdf,
+            ".docx": self._load_docx,
         }
 
     def load(self, path: str) -> List[Document]:
@@ -146,3 +148,33 @@ class DocumentLoader:
                 documents.append(Document(content=content, metadata=metadata))
 
         return documents
+
+    def _load_pdf(self, filepath: str) -> List[Document]:
+        """加载 PDF 文件（提取全文文本，依赖 pypdf）"""
+        try:
+            from pypdf import PdfReader
+        except ImportError:  # 兼容旧包名
+            from PyPDF2 import PdfReader
+
+        filename = os.path.basename(filepath)
+        reader = PdfReader(filepath)
+        pages = []
+        for page in reader.pages:
+            try:
+                pages.append(page.extract_text() or "")
+            except Exception as e:
+                print(f"⚠️ PDF 页提取失败 {filename}: {e}")
+        text = "\n".join(p for p in pages if p.strip())
+        if not text.strip():
+            return []
+        return [Document(content=text, metadata={"source": filename, "type": "pdf"})]
+
+    def _load_docx(self, filepath: str) -> List[Document]:
+        """加载 Word(.docx) 文件（依赖 docx2txt）"""
+        import docx2txt
+
+        filename = os.path.basename(filepath)
+        text = docx2txt.process(filepath) or ""
+        if not text.strip():
+            return []
+        return [Document(content=text, metadata={"source": filename, "type": "docx"})]

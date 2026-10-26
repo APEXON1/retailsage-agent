@@ -25,7 +25,8 @@ class RAGTool(Tool):
     def __init__(self, knowledge_dir: str, vector_store_dir: str,
                  embedding_model: str = None,
                  collection_name: str = "data_insight_knowledge",
-                 llm=None, enable_cache: bool = True):
+                 llm=None, enable_cache: bool = True,
+                 extra_knowledge_dirs: List[str] = None):
         """
         初始化 RAG 工具
 
@@ -48,6 +49,8 @@ class RAGTool(Tool):
         self.knowledge_dir = knowledge_dir
         self.vector_store_dir = vector_store_dir
         self.enable_cache = enable_cache
+        # 除共享基础库外，额外纳入索引的目录（如该用户上传的知识文档）
+        self.extra_knowledge_dirs = list(extra_knowledge_dirs or [])
 
         # 初始化缓存
         self._cache = None
@@ -185,16 +188,36 @@ class RAGTool(Tool):
             )
 
     def _build_index(self):
-        """构建知识索引"""
-        if not os.path.exists(self.knowledge_dir):
-            print(f"⚠️ 知识目录不存在: {self.knowledge_dir}")
+        """构建知识索引（基础库 + 用户额外目录，全量干净重建）。
+
+        每次都先清空向量库再重建，以保证：
+        1. 与磁盘上的源文件一致（新增/删除的上传文档即时生效）；
+        2. 避免 add_documents 用 doc_i 顺序 ID 重复写入导致的 ID 冲突。
+        """
+        # 收集所有知识来源目录：共享基础库 + 该用户的上传目录
+        source_dirs = [self.knowledge_dir] + self.extra_knowledge_dirs
+        source_dirs = [d for d in source_dirs if d and os.path.exists(d)]
+
+        # 全量重建前先清空旧索引
+        try:
+            self.vector_store.delete_all()
+        except Exception as e:
+            print(f"⚠️ 清空旧向量索引失败（忽略）: {e}")
+
+        if not source_dirs:
+            print(f"⚠️ 没有可用的知识目录: {self.knowledge_dir}")
             self._indexed = True
             return
 
-        print(f"📚 正在构建知识索引: {self.knowledge_dir}")
+        print(f"📚 正在构建知识索引，来源目录: {source_dirs}")
 
         # 加载文档
-        documents = self.document_loader.load(self.knowledge_dir)
+        documents = []
+        for d in source_dirs:
+            try:
+                documents.extend(self.document_loader.load(d))
+            except Exception as e:
+                print(f"⚠️ 加载目录失败 {d}: {e}")
         print(f"  加载了 {len(documents)} 个文档")
 
         # 分块
@@ -212,7 +235,6 @@ class RAGTool(Tool):
         self._indexed = True
 
     def rebuild_index(self):
-        """重建索引"""
-        self.vector_store.delete_all()
+        """重建索引（清空后从所有来源目录重新构建）"""
         self._indexed = False
         self._build_index()

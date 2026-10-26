@@ -49,8 +49,9 @@ Cookie 的作用域是主机名、不含端口，所以门户登录一次，浏�
 | 范围 | 隔离方式 |
 |---|---|
 | 洞察应用的用户数据 | 会话历史 / 用户画像 / 图表 / 报告按账号分目录：`data_insight/memory/users/<账号>/`、`data_insight/output/users/<账号>/` |
+| 洞察应用的上传数据 | 界面上传的数据库副本 `data_insight/memory/users/<账号>/data.db`、上传的知识文档 `.../uploads/kb/`、独立向量库 `.../vector_store/`，均按账号隔离 |
 | 知识库应用的用户数据 | 简历文件 `my-rag/data/<邮箱>/`、DB 主键 `(owner_email, filename)`、索引 chunk 的 `metadata.owner` |
-| 全站共享（有意为之） | 业务库 `test_retail.db`、零售行业知识库、账号库 |
+| 全站共享（有意为之） | 业务库 `test_retail.db`（作为上传数据库的初始模板）、零售行业知识库、账号库 |
 
 ### 运维脚本
 
@@ -110,6 +111,17 @@ Cookie 的作用域是主机名、不含端口，所以门户登录一次，浏�
 
 支持 PDF、PowerPoint、Markdown 三种格式输出。
 
+### 6. 零门槛接入自有数据 📎
+
+点击界面右上角 **➕** 号即可上传文件，无需改任何代码：
+
+| 上传类型 | 支持格式 | 效果 |
+|---|---|---|
+| 📊 导入数据库 | CSV / Excel(.xlsx) | 以文件名自动建表，立刻可用自然语言查询（如「统计 `sales_2024` 的行数」） |
+| 📚 加入知识库 | PDF / Word / TXT / Markdown | 自动解析、分块、向量化并重建索引，Agent 随即可引用其中内容 |
+
+所有上传数据**按账号隔离**，互不影响，也不会污染共享的 `test_retail.db`。➕ 号面板内同时提供「🗑 新建对话」入口。
+
 ---
 
 ## 🛠️ 技术栈
@@ -120,6 +132,8 @@ Cookie 的作用域是主机名、不含端口，所以门户登录一次，浏�
 | LLM | DeepSeek / Qwen / OpenAI 兼容接口 |
 | 数据库 | SQLite / MySQL / PostgreSQL / ClickHouse |
 | RAG 系统 | ChromaDB + Sentence-Transformers + BM25 |
+| 数据导入 | pandas + openpyxl（CSV / Excel → SQLite） |
+| 文档解析 | pypdf（PDF） + docx2txt（Word） |
 | 可视化 | Matplotlib |
 | 报告生成 | Jinja2 + FPDF2 + python-pptx |
 
@@ -147,6 +161,7 @@ D:\Data Analysis\
     │
     ├── tools/                     # 工具层
     │   ├── db_connector_tool.py   # 数据库连接（支持SQLite/MySQL/PG/CK）
+    │   ├── data_importer.py       # 上传数据导入（CSV/Excel → SQLite，按文件名建表）
     │   ├── sql_generator_tool.py  # NL2SQL
     │   ├── data_analyzer_tool.py  # 数据分析（统计/异常/下钻）
     │   ├── chart_generator_tool.py# 图表生成
@@ -156,7 +171,7 @@ D:\Data Analysis\
     │   └── error_handler.py       # 错误处理
     │
     ├── rag/                       # RAG 知识检索
-    │   ├── document_loader.py     # 文档加载
+    │   ├── document_loader.py     # 文档加载（TXT/MD/CSV/JSON/PDF/Word）
     │   ├── text_splitter.py       # 文本分块（语义感知）
     │   ├── embeddings.py          # 向量化（支持HF镜像）
     │   ├── vector_store.py        # 向量存储
@@ -268,6 +283,19 @@ python -m data_insight.main
 | `orders` | order_id, order_date, region, city, store_id, store_name, channel, category, product_name, quantity, order_amount, cost_amount, customer_id, is_member | 订单表 |
 | `customers` | customer_id, register_date, region, city, gender, age_group, total_orders, total_amount | 客户表 |
 | `stores` | store_id, store_name, region, city, store_type, open_date | 门店表 |
+
+### 方式零：通过 Web 界面上传（零代码，最推荐）
+
+不想改任何配置？启动界面后点击右上角 **➕** 号：
+
+1. 选择「📊 导入数据库（CSV / Excel）」，上传你的 `.csv` / `.xlsx` 文件（可多选）
+2. 系统以文件名为表名自动建表（如 `sales 2024.csv` → 表 `sales_2024`，同名表覆盖），并在状态区回显真实表名
+3. 回到对话框，直接用自然语言提问，例如「统计 `sales_2024` 的行数」「看看 `sales_2024` 前几行」
+
+> 💡 上传的数据库是**按账号隔离**的独立副本（首次会从基础库 `test_retail.db` 复制一份），不影响他人。
+> Agent 会通过 `SELECT name FROM sqlite_master` + `PRAGMA table_info` 自动发现你上传的表结构，无需手改提示词。
+
+若上传的是**业务文档**（产品手册、指标说明、行业报告等），改选「📚 加入知识库（PDF / Word / TXT / MD）」，文档会被解析并纳入 RAG 检索，之后提问时 Agent 会自动引用其中内容。
 
 ### 方式一：替换 SQLite 数据库（最简单）
 

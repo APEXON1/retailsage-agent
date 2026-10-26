@@ -44,6 +44,10 @@ INSIGHT_SYSTEM_PROMPT = """你是 RetailSage，一个专业的零售/电商数�
 - customers: customer_id, register_date, region, city, gender, age_group, total_orders, total_amount
 - stores: store_id, store_name, region, city, store_type, open_date
 
+> 注：用户可能通过界面上传 CSV/Excel 导入了**自定义数据表**（不在上方列表中）。
+> 当用户提到未知的表时，先用 `SELECT name FROM sqlite_master WHERE type='table'` 查看所有表，
+> 再用 `PRAGMA table_info(表名)` 了解字段，然后编写查询。
+
 ## 工作流程
 1. 使用 **Thought** 工具分析用户需求
 2. 如果涉及业务术语，先用 **rag_search** 查询指标定义
@@ -91,6 +95,7 @@ class InsightAgent:
         memory_dir: str = None,
         max_steps: int = 10,
         vector_store_dir: str = None,
+        extra_knowledge_dirs: list = None,
         trace_enabled: bool = True
     ) -> ReActAgent:
         """
@@ -192,7 +197,8 @@ class InsightAgent:
             knowledge_dir=knowledge_dir,
             vector_store_dir=vector_store_dir or os.path.join(memory_dir, "vector_store"),
             embedding_model=EMBEDDING_MODEL,
-            llm=llm
+            llm=llm,
+            extra_knowledge_dirs=extra_knowledge_dirs,
         )
         registry.register_tool(rag_tool)
         logger.debug("已注册 RAG 工具")
@@ -210,5 +216,8 @@ class InsightAgent:
             "ReActAgent 创建完成: name=%s, tools=%d, max_steps=%d",
             agent.name, len(registry.get_all_tools()), max_steps
         )
+
+        # 暴露 RAG 工具引用，便于上层（如 Web 上传）在新增知识文档后重建索引
+        agent.rag_tool = rag_tool
 
         return agent
