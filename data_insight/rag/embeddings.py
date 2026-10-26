@@ -6,6 +6,7 @@
 """
 
 import os
+import sys
 from typing import List, Optional
 
 
@@ -16,16 +17,33 @@ def _setup_hf_mirror():
     优先级：
     1. 环境变量 HF_ENDPOINT（已设置则不覆盖）
     2. 默认使用 hf-mirror.com 镜像
+
+    注意：huggingface_hub 在首次 import 时会把 HF_ENDPOINT 固化为常量 ENDPOINT。
+    如果它已被其他库（如 gradio）提前导入，仅设置环境变量不会生效，
+    需要同步修补已加载模块中的常量。
     """
     # 如果用户已设置 HF_ENDPOINT，尊重用户配置
     if os.getenv("HF_ENDPOINT"):
         print(f"[HF Mirror] 使用自定义镜像: {os.getenv('HF_ENDPOINT')}")
-        return
+    else:
+        # 默认使用国内镜像源
+        default_mirror = "https://hf-mirror.com"
+        os.environ["HF_ENDPOINT"] = default_mirror
+        print(f"[HF Mirror] 使用镜像源: {default_mirror}")
 
-    # 默认使用国内镜像源
-    default_mirror = "https://hf-mirror.com"
-    os.environ["HF_ENDPOINT"] = default_mirror
-    print(f"[HF Mirror] 使用镜像源: {default_mirror}")
+    # 若 huggingface_hub 已被提前导入，修补其已固化的 ENDPOINT 常量
+    endpoint = os.environ["HF_ENDPOINT"]
+    for mod_name in (
+        "huggingface_hub",
+        "huggingface_hub.constants",
+        "huggingface_hub.utils._http",
+    ):
+        mod = sys.modules.get(mod_name)
+        if mod is not None and hasattr(mod, "ENDPOINT"):
+            try:
+                mod.ENDPOINT = endpoint
+            except Exception:
+                pass
 
 
 # 模块加载时自动设置镜像
