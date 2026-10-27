@@ -34,6 +34,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 )
 """
 
+# 与 my-rag/database.py 同一张表：验证码只存 SHA-256，带用途（register/reset）与过期时间
+_VERIFICATION_DDL = """
+CREATE TABLE IF NOT EXISTS verification_codes (
+    email TEXT,
+    code_hash TEXT,
+    purpose TEXT,
+    expires_at TEXT,
+    created_at TEXT
+)
+"""
+
 
 def connect(readonly: bool = False, timeout: float = 5.0) -> sqlite3.Connection:
     """短连接：用完即 close，绝不跨请求持有。"""
@@ -67,6 +78,7 @@ def migrate() -> list[str]:
 
         conn.execute(_USERS_DDL)
         conn.execute(_SESSIONS_DDL)
+        conn.execute(_VERIFICATION_DDL)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_exp ON sessions(expires_at)")
 
         cols = [r[1] for r in conn.execute("PRAGMA table_info(users)")]

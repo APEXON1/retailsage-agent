@@ -1,8 +1,10 @@
 import os
 import re
+import json
 import shutil
 import logging
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import time
 
@@ -29,6 +31,38 @@ from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_community.document_loaders import WebBaseLoader
 
 st.set_page_config(page_title="智能 HR 简历管理与问答系统", page_icon="👔", layout="wide")
+
+# ==================== 🌗 跟随门户的日间 / 夜间外观 ====================
+# 门户把选择写进 rs_theme Cookie（同 host，跨端口共享）。Streamlit 没有运行时主题 API，
+# 但它的「用户主题」缓存存在 localStorage 的 stActiveTheme-<path>-v2 里（Streamlit 1.59），
+# 这里用 0 高组件把 Cookie 同步进去，只在确实不一致时重载一次页面。
+_THEME_STORAGE_KEY = "stActiveTheme-/-v2"
+_THEME_MARKER = "rs-theme-applied"
+
+
+def _sync_portal_theme() -> None:
+    theme = (st.context.cookies.get("rs_theme") or "").strip().lower()
+    if theme not in ("dark", "light"):
+        return
+    want = "Dark" if theme == "dark" else "Light"
+    components.html(
+        f"""<script>
+(function () {{
+  try {{
+    var p = window.parent;
+    var want = {json.dumps(want)};
+    if (p.localStorage.getItem({json.dumps(_THEME_MARKER)}) === want) return;
+    p.localStorage.setItem({json.dumps(_THEME_STORAGE_KEY)}, JSON.stringify(want));
+    p.localStorage.setItem({json.dumps(_THEME_MARKER)}, want);
+    p.location.reload();
+  }} catch (e) {{}}
+}})();
+</script>""",
+        height=0,
+    )
+
+
+_sync_portal_theme()
 
 
 def _inject_streamlit_secrets():

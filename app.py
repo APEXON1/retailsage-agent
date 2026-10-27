@@ -816,7 +816,6 @@ def build_demo() -> "gr.Blocks":
     """构建 UI。门户托管与单机直跑共用这一份，避免两套界面走样。"""
     with gr.Blocks(
         title="RetailSage Agent",
-        css=CUSTOM_CSS,
         fill_height=True,
     ) as demo:
 
@@ -843,13 +842,12 @@ def build_demo() -> "gr.Blocks":
                         variant="secondary",
                     )
 
-            # 对话显示区（messages 格式）
+            # 对话显示区（Gradio 6 默认就是 messages 格式）
             chatbot = gr.Chatbot(
                 label="",
-                type="messages",
                 elem_classes=["chatbot"],
                 height=480,
-                show_copy_button=True,
+                buttons=["copy"],
             )
 
             # 上传面板（点击 + 号展开 / 收起）
@@ -982,4 +980,5 @@ if __name__ == "__main__":
         server_port=7860,
         share=False,
         inbrowser=True,
+        css=CUSTOM_CSS,
     )

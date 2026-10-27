@@ -4,7 +4,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>智能问答门户</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=4">
+  <script>
+    function readThemeCookie() {
+      var m = document.cookie.match(/(?:^|;\s*)rs_theme=(dark|light)/);
+      return m ? m[1] : null;
+    }
+    (function () {
+      var saved = localStorage.getItem('rs-theme') || readThemeCookie();
+      var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var theme = dark ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+      document.cookie = 'rs_theme=' + theme + '; path=/; max-age=31536000; samesite=lax';
+    })();
+    function syncAppLinks(theme) {
+      var links = document.querySelectorAll('a.app-card');
+      for (var i = 0; i < links.length; i++) {
+        try {
+          var u = new URL(links[i].href, window.location.href);
+          u.searchParams.set('__theme', theme);
+          links[i].href = u.toString();
+        } catch (e) {}
+      }
+    }
+    function toggleTheme() {
+      var root = document.documentElement;
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('rs-theme', next);
+      document.cookie = 'rs_theme=' + next + '; path=/; max-age=31536000; samesite=lax';
+      syncAppLinks(next);
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+      syncAppLinks(document.documentElement.getAttribute('data-theme') || 'light');
+    });
+  </script>
 </head>
 <body>
   <div class="shell">
@@ -17,7 +51,15 @@
         </div>
       </div>
       <div class="userbox">
-        <div class="user-avatar">{{ masked[:2] | upper }}</div>
+        <button class="theme-toggle" type="button" onclick="toggleTheme()" title="切换日间 / 夜间外观" aria-label="切换日间 / 夜间外观">
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
         <span title="{{ email }}">{{ masked }}</span>
         <a class="logout-link" href="/logout">退出</a>
       </div>

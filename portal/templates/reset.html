@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>忘记密码 · 智能问答门户</title>
+  <link rel="stylesheet" href="/static/style.css?v=4">
+  <script>
+    function readThemeCookie() {
+      var m = document.cookie.match(/(?:^|;\s*)rs_theme=(dark|light)/);
+      return m ? m[1] : null;
+    }
+    (function () {
+      var saved = localStorage.getItem('rs-theme') || readThemeCookie();
+      var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var theme = dark ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+      document.cookie = 'rs_theme=' + theme + '; path=/; max-age=31536000; samesite=lax';
+    })();
+    function syncAppLinks(theme) {
+      var links = document.querySelectorAll('a.app-card');
+      for (var i = 0; i < links.length; i++) {
+        try {
+          var u = new URL(links[i].href, window.location.href);
+          u.searchParams.set('__theme', theme);
+          links[i].href = u.toString();
+        } catch (e) {}
+      }
+    }
+    function toggleTheme() {
+      var root = document.documentElement;
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('rs-theme', next);
+      document.cookie = 'rs_theme=' + next + '; path=/; max-age=31536000; samesite=lax';
+      syncAppLinks(next);
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+      syncAppLinks(document.documentElement.getAttribute('data-theme') || 'light');
+    });
+  </script>
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <button class="theme-toggle auth-theme" type="button" onclick="toggleTheme()" title="切换日间 / 夜间外观" aria-label="切换日间 / 夜间外观">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      </button>
+      <div class="brand">
+        <div class="brand-mark">◆</div>
+        <div>
+          <div class="brand-text">智能问答门户</div>
+          <div class="brand-sub">统一入口 · 多知识库</div>
+        </div>
+      </div>
+
+      <h1 class="auth-title">忘记密码</h1>
+      <p class="auth-sub">验证码校验通过后即可设置新密码。</p>
+
+      {% if error %}
+      <div class="alert"><span>⚠</span><span>{{ error }}</span></div>
+      {% endif %}
+
+      <form method="post" action="/reset" autocomplete="on">
+        <div class="field">
+          <label for="email">注册邮箱</label>
+          <input id="email" name="email" type="email" value="{{ email }}"
+                 placeholder="you@example.com" autocomplete="email" autofocus required>
+        </div>
+        <div class="field">
+          <label for="code">邮箱验证码</label>
+          <div class="code-row">
+            <input id="code" name="code" type="text" inputmode="numeric" maxlength="6" value="{{ code }}"
+                   placeholder="6 位数字" autocomplete="one-time-code" required>
+            <button class="btn-ghost" type="button" onclick="sendCode('reset', this)">发送验证码</button>
+          </div>
+          <div id="codeMsg" class="alert info" style="display:none;margin-top:10px"></div>
+        </div>
+        <div class="field">
+          <label for="password">新密码</label>
+          <input id="password" name="password" type="password"
+                 placeholder="至少 6 位，需含字母和数字" autocomplete="new-password" required>
+        </div>
+        <div class="field">
+          <label for="confirm">确认新密码</label>
+          <input id="confirm" name="confirm" type="password"
+                 placeholder="再次输入新密码" autocomplete="new-password" required>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" type="submit">重置密码</button>
+          <a class="btn-secondary" href="/login">返回登录</a>
+        </div>
+      </form>
+
+      <div class="auth-foot">
+        通过注册邮箱的验证码重置密码，重置后请使用新密码登录。
+      </div>
+    </div>
+  </div>
+
+  <script>
+  async function sendCode(purpose, btn) {
+    const email = document.getElementById('email').value.trim();
+    const box = document.getElementById('codeMsg');
+    if (!email) {
+      box.style.display = 'block';
+      box.className = 'alert';
+      box.textContent = '请先填写邮箱';
+      return;
+    }
+    box.style.display = 'block';
+    box.className = 'alert info';
+    box.textContent = '正在发送…';
+    if (btn) btn.disabled = true;
+    try {
+      const resp = await fetch('/' + purpose + '/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ email: email })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        box.className = 'alert info';
+        box.textContent = data.message + (data.demo_code ? '　验证码：' + data.demo_code : '');
+      } else {
+        box.className = 'alert';
+        box.textContent = data.message || '发送失败，请稍后再试';
+      }
+    } catch (e) {
+      box.className = 'alert';
+      box.textContent = '网络异常，请稍后再试';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+  </script>
+</body>
+</html>

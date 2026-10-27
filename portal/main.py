@@ -20,7 +20,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from .accounts import authenticate
+from .accounts import (
+    authenticate,
+    register_user,
+    request_verification_code,
+    reset_password,
+)
 from .dbi import DB_PATH, migrate
 from .sessions import COOKIE, MAX_AGE, TTL_HOURS, issue, revoke, user_of
 
@@ -90,6 +95,20 @@ def _mask(email: str) -> str:
     return f"{name[:2]}***@{domain}"
 
 
+def _set_session(resp: RedirectResponse, token: str) -> RedirectResponse:
+    """登录 / 注册成功后统一种 Cookie，保证三处行为一致。"""
+    resp.set_cookie(
+        COOKIE,
+        token,
+        max_age=MAX_AGE,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=False,  # 本地 http，设了浏览器会直接丢弃
+    )
+    return resp
+
+
 # ==================== 页面 ====================
 @app.get("/healthz")
 def healthz():
@@ -103,14 +122,20 @@ def login_page(request: Request, next: str = "/"):
     if email:
         return RedirectResponse(nxt, status_code=302)
     return templates.TemplateResponse(
-        request, "login.html", {"next": nxt, "error": None, "identifier": ""}
+        request,
+        "login.html",
+        {"next": nxt, "error": None, "identifier": "", "notice": None},
     )
+
+
+async def _read_form(request: Request) -> dict[str, str]:
+    raw = (await request.body()).decode("utf-8", "replace")
+    return {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
 
 
 @app.post("/login")
 async def login_submit(request: Request):
-    raw = (await request.body()).decode("utf-8", "replace")
-    form = {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
+    form = await _read_form(request)
     identifier = form.get("identifier", "")
     password = form.get("password", "")
     nxt = _safe_next(form.get("next"))
@@ -120,21 +145,83 @@ async def login_submit(request: Request):
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"next": nxt, "error": msg, "identifier": identifier},
+            {"next": nxt, "error": msg, "identifier": identifier, "notice": None},
         )
 
     token = await run_in_threadpool(issue, email)
-    resp = RedirectResponse(nxt, status_code=303)
-    resp.set_cookie(
-        COOKIE,
-        token,
-        max_age=MAX_AGE,
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=False,  # 本地 http，设了浏览器会直接丢弃
+    return _set_session(RedirectResponse(nxt, status_code=303), token)
+
+
+@app.get("/register")
+def register_page(request: Request):
+    if user_of(request.cookies.get(COOKIE)):
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(
+        request, "register.html", {"error": None, "email": "", "code": ""}
     )
-    return resp
+
+
+@app.post("/register")
+async def register_submit(request: Request):
+    form = await _read_form(request)
+    email = form.get("email", "").strip().lower()
+    code = form.get("code", "").strip()
+    ok, msg = await run_in_threadpool(
+        register_user, email, form.get("password", ""), form.get("confirm", ""), code
+    )
+    if not ok:
+        return templates.TemplateResponse(
+            request, "register.html", {"error": msg, "email": email, "code": code}
+        )
+
+    token = await run_in_threadpool(issue, email)
+    return _set_session(RedirectResponse("/", status_code=303), token)
+
+
+@app.post("/register/code")
+async def register_code(request: Request):
+    form = await _read_form(request)
+    ok, msg, demo = await run_in_threadpool(
+        request_verification_code, form.get("email", ""), "register"
+    )
+    return JSONResponse({"ok": ok, "message": msg, "demo_code": demo})
+
+
+@app.get("/reset")
+def reset_page(request: Request):
+    if user_of(request.cookies.get(COOKIE)):
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(
+        request, "reset.html", {"error": None, "email": "", "code": ""}
+    )
+
+
+@app.post("/reset")
+async def reset_submit(request: Request):
+    form = await _read_form(request)
+    email = form.get("email", "").strip().lower()
+    code = form.get("code", "").strip()
+    ok, msg = await run_in_threadpool(
+        reset_password, email, code, form.get("password", ""), form.get("confirm", "")
+    )
+    if not ok:
+        return templates.TemplateResponse(
+            request, "reset.html", {"error": msg, "email": email, "code": code}
+        )
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {"next": "/", "error": None, "identifier": email, "notice": f"{msg}，请使用新密码登录。"},
+    )
+
+
+@app.post("/reset/code")
+async def reset_code(request: Request):
+    form = await _read_form(request)
+    ok, msg, demo = await run_in_threadpool(
+        request_verification_code, form.get("email", ""), "reset"
+    )
+    return JSONResponse({"ok": ok, "message": msg, "demo_code": demo})
 
 
 @app.get("/logout")

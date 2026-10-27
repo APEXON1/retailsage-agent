@@ -96,6 +96,23 @@ class Gate:
         await resp(scope, receive, send)
 
 
+# 跟随门户的日间/夜间选择：门户把选择写进 rs_theme Cookie（同 host，跨端口共享），
+# 这里在 Gradio 初始化前把它转成 Gradio 认识的 ?__theme=dark|light。
+THEME_HEAD = """
+<script>
+(function () {
+  var m = document.cookie.match(/(?:^|;\\s*)rs_theme=(dark|light)/);
+  if (!m) return;
+  var url = new URL(window.location.href);
+  if (url.searchParams.get('__theme') !== m[1]) {
+    url.searchParams.set('__theme', m[1]);
+    window.location.replace(url.toString());
+  }
+})();
+</script>
+"""
+
+
 def create_app() -> FastAPI:
     demo = build_demo()
     application = FastAPI(title="RetailSage 洞察", docs_url=None, redoc_url=None, openapi_url=None)
@@ -106,6 +123,7 @@ def create_app() -> FastAPI:
         path="/",
         auth_dependency=lambda request: user_of(request.cookies.get(COOKIE)),
         css=CUSTOM_CSS,
+        head=THEME_HEAD,
     )
     return application
 
