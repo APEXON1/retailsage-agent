@@ -47,6 +47,7 @@ from data_insight.config import (
 )
 from data_insight.agents.insight_agent import InsightAgent
 from data_insight.tools import data_importer
+from rs_theme import THEME_CSS, build_theme
 
 
 # ==================== 数据库表结构说明 ====================
@@ -501,305 +502,15 @@ def handle_upload(mode: str, files, request: gr.Request):
     return head + "\n\n" + "\n".join(lines), gr.File(value=None)
 
 
-CUSTOM_CSS = """
-/* 整体容器 */
+# 通用设计令牌与组件外观来自 rs_theme.THEME_CSS（含日夜两套），洞察仅追加容器限宽。
+INSIGHT_CSS = """
 .gradio-container {
-    position: relative !important;
     max-width: 1000px !important;
     margin: auto !important;
-    background: #f9fafb !important;
-}
-
-/* 主面板 */
-.main-panel {
-    border: none !important;
-    box-shadow: none !important;
-    background: transparent !important;
-}
-
-/* 顶部标题栏 */
-.header-row {
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: flex-start !important;
-    justify-content: flex-start !important;
-    padding: 20px 0 8px 8px !important;
-    gap: 12px !important;
-}
-.welcome-title h1 {
-    font-size: 26px !important;
-    font-weight: 600 !important;
-    color: #111827 !important;
-    margin: 0 !important;
-    text-align: left !important;
-    line-height: 1.2 !important;
-}
-.welcome-subtitle p {
-    font-size: 14px !important;
-    color: #6b7280 !important;
-    margin: 4px 0 0 0 !important;
-    text-align: left !important;
-    line-height: 1.4 !important;
-}
-.user-tag {
-    font-size: 12px !important;
-    color: #9ca3af !important;
-    word-break: break-all !important;
-    margin-top: 4px !important;
-}
-
-/* 右上角新建对话按钮（与发送按钮同列，内容区右侧对齐） */
-.new-chat-icon {
-    position: absolute !important;
-    top: 24px !important;
-    right: 24px !important;
-    z-index: 1000 !important;
-    border-radius: 8px !important;
-    width: 24px !important;
-    height: 24px !important;
-    min-width: 24px !important;
-    max-width: 24px !important;
-    min-height: 24px !important;
-    max-height: 24px !important;
-    padding: 0 !important;
-    font-size: 14px !important;
-    line-height: 1 !important;
-    background: #ffffff !important;
-    border: 1px solid #e5e7eb !important;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
-    transition: all 0.15s ease !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-}
-.new-chat-icon:hover {
-    background: #f5f3ff !important;
-    border-color: #4f46e5 !important;
-    color: #4f46e5 !important;
-}
-.new-chat-icon button {
-    border-radius: 8px !important;
-    width: 24px !important;
-    height: 24px !important;
-    padding: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-}
-
-/* 对话区域 */
-.chatbot {
-    border: none !important;
-    border-radius: 16px !important;
-    background: #ffffff !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
-    min-height: 420px !important;
-}
-.chatbot .message-row {
-    padding: 8px 16px !important;
-}
-/* 用户气泡：与"发送"按钮一致的紫底白字（#4f46e5） */
-.chatbot .message.user,
-.chatbot .user {
-    background: #4f46e5 !important;
-    border-color: #4f46e5 !important;
-    color: #ffffff !important;
-    border-radius: 16px 16px 4px 16px !important;
-}
-/* Gradio 内层 markdown/文本容器默认是深色字，需一并强制为白色 */
-.chatbot .message.user .prose,
-.chatbot .message.user .prose *,
-.chatbot .message.user .flex-wrap,
-.chatbot .message.user .flex-wrap *,
-.chatbot .user .prose,
-.chatbot .user .prose *,
-.chatbot .user .flex-wrap,
-.chatbot .user .flex-wrap * {
-    color: #ffffff !important;
-    text-align: left !important;
-}
-/* 机器人气泡 */
-.chatbot .message.bot,
-.chatbot .bot {
-    background: #f3f4f6 !important;
-    color: #111827 !important;
-    border-radius: 16px 16px 16px 4px !important;
-}
-
-/* 底部输入区 */
-.input-area {
-    background: #ffffff !important;
-    border: 1px solid #e5e7eb !important;
-    border-radius: 20px !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
-    padding: 12px 16px !important;
-    margin-top: 16px !important;
-    transition: all 0.2s ease !important;
-}
-.input-area:focus-within {
-    border-color: #4f46e5 !important;
-    box-shadow: 0 4px 24px rgba(79, 70, 229, 0.15) !important;
-}
-.input-box textarea {
-    border: none !important;
-    outline: none !important;
-    box-shadow: none !important;
-    font-size: 15px !important;
-    line-height: 1.5 !important;
-    resize: none !important;
-    background: transparent !important;
-}
-.input-box textarea:focus {
-    border: none !important;
-    outline: none !important;
-    box-shadow: none !important;
-}
-.send-btn {
-    border-radius: 12px !important;
-    background: #4f46e5 !important;
-    color: #ffffff !important;
-    font-weight: 600 !important;
-    transition: all 0.15s ease !important;
-}
-.send-btn:hover {
-    background: #4338ca !important;
-    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3) !important;
-}
-
-/* 推荐问题 */
-.suggestions-row {
-    display: flex !important;
-    align-items: center !important;
-    gap: 8px !important;
-    margin-top: 10px !important;
-    padding-left: 4px !important;
-    flex-wrap: wrap !important;
-}
-.suggestion-label {
-    color: #9ca3af !important;
-    font-size: 13px !important;
-    white-space: nowrap !important;
-}
-.suggestion-chip {
-    background: #ffffff !important;
-    border: 1px solid #e5e7eb !important;
-    border-radius: 999px !important;
-    color: #4b5563 !important;
-    font-size: 13px !important;
-    padding: 4px 12px !important;
-    cursor: pointer !important;
-    transition: all 0.15s ease !important;
-    white-space: nowrap !important;
-}
-.suggestion-chip:hover {
-    border-color: #4f46e5 !important;
-    color: #4f46e5 !important;
-    background: #f5f3ff !important;
-}
-
-/* 底部信息区 */
-.bottom-info {
-    margin-top: 8px !important;
-}
-.capabilities {
-    text-align: center !important;
-    color: #9ca3af !important;
-    font-size: 12px !important;
-    margin-top: 8px !important;
-}
-.portal-link {
-    display: block !important;
-    text-align: center !important;
-    font-size: 12px !important;
-    margin-top: 6px !important;
-    color: #9ca3af !important;
-}
-.portal-link a {
-    color: #6b7280 !important;
-    text-decoration: none !important;
-}
-.portal-link a:hover {
-    color: #4f46e5 !important;
-}
-
-/* 思考中动画（渲染在 assistant 气泡内） */
-.thinking-bubble {
-    display: flex !important;
-    align-items: center !important;
-    gap: 8px !important;
-}
-.thinking-bubble p {
-    margin: 0 !important;
-}
-.thinking-text {
-    color: #6b7280 !important;
-    font-size: 14px !important;
-}
-/* 流式输出文本（实时追加在思考动画下方） */
-.stream-text {
-    margin-top: 8px !important;
-    white-space: pre-wrap !important;
-    word-break: break-word !important;
-    color: #111827 !important;
-    font-size: 14px !important;
-    line-height: 1.6 !important;
-}
-.thinking-spinner {
-    display: inline-block !important;
-    width: 14px !important;
-    height: 14px !important;
-    border: 2px solid #e5e7eb !important;
-    border-top-color: #4f46e5 !important;
-    border-radius: 50% !important;
-    animation: spin 1s linear infinite !important;
-    vertical-align: middle !important;
-}
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-.time-display {
-    text-align: center !important;
-    color: #6b7280 !important;
-    font-size: 12px !important;
-    margin-top: 4px !important;
-    min-height: 18px !important;
-}
-
-/* 上传面板 */
-.upload-panel {
-    background: #ffffff !important;
-    border: 1px solid #e5e7eb !important;
-    border-radius: 16px !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06) !important;
-    padding: 14px 16px !important;
-    margin: 12px 0 4px 0 !important;
-    gap: 8px !important;
-}
-.upload-title {
-    font-size: 15px !important;
-    font-weight: 600 !important;
-    color: #111827 !important;
-}
-.upload-status {
-    font-size: 13px !important;
-    color: #374151 !important;
-    line-height: 1.6 !important;
-}
-.upload-status p {
-    margin: 2px 0 !important;
-}
-.upload-actions {
-    margin-top: 4px !important;
-}
-
-/* 页脚 */
-.footer-info {
-    text-align: center !important;
-    color: #9ca3af !important;
-    font-size: 12px !important;
-    margin-top: 16px !important;
 }
 """
+
+CUSTOM_CSS = THEME_CSS + INSIGHT_CSS
 
 
 # 推荐问题列表
@@ -814,6 +525,8 @@ SUGGESTIONS = [
 
 def build_demo() -> "gr.Blocks":
     """构建 UI。门户托管与单机直跑共用这一份，避免两套界面走样。"""
+    # Gradio 6：theme/css 由 launch()（单机）或 mount_gradio_app()（门户托管）传入，
+    # 不再放在 Blocks() 构造器（6.0 起已弃用，且 mount 会忽略构造器里的 theme）。
     with gr.Blocks(
         title="RetailSage Agent",
         fill_height=True,
@@ -980,5 +693,6 @@ if __name__ == "__main__":
         server_port=7860,
         share=False,
         inbrowser=True,
+        theme=build_theme(),
         css=CUSTOM_CSS,
     )

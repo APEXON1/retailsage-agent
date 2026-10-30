@@ -188,13 +188,13 @@ def _tasks() -> list[dict]:
         {
             "name": "kb",
             "exe": str(RAG_PY),
-            # 一律用 python -m，不能用 Scripts\*.exe：后者二进制里内嵌了旧机器的绝对路径
-            "args": ["-m", "streamlit", "run", "app.py",
-                     "--server.port", str(KB_PORT), "--server.address", "127.0.0.1",
-                     "--server.headless", "true", "--browser.gatherUsageStats", "false"],
+            # 用 venv 的 python.exe 直接跑脚本（不能用 Scripts\*.exe 控制台壳：
+            # 那种壳里内嵌了创建时的绝对路径，换机器就失效）。
+            # run_kb_web.py 内部会 os.chdir 到 my-rag 并扩 sys.path，与启动 CWD 无关。
+            "args": [str(ROOT / "my-rag" / "run_kb_web.py")],
             "cwd": ROOT / "my-rag",
             "port": KB_PORT,
-            "env": {"PORTAL_URL": f"http://127.0.0.1:{PORTAL_PORT}"},
+            "env": {"KB_PORT": str(KB_PORT), "PORTAL_URL": f"http://127.0.0.1:{PORTAL_PORT}"},
         },
     ]
 
@@ -217,20 +217,27 @@ def _parse_only(argv: list[str]) -> set[str]:
 
 
 def _validate() -> str | None:
-    """启动前的前置检查，返回错误信息（None 表示通过）。"""
-    if not OWN_PY.exists():
-        return (
-            f"找不到项目虚拟环境：{OWN_PY}\n"
-            "请先按 SETUP.md 创建 .venv（pip install -r requirements.txt）。"
-        )
-    if Path(sys.executable).resolve() != OWN_PY.resolve():
-        print(f"[提示] 当前解释器不是项目虚拟环境：{sys.executable}")
-        print(f"       建议改用：{OWN_PY}")
+    """启动前的前置检查，返回错误信息（None 表示通过）。
+
+    门户 / 洞察两个任务都用 sys.executable 运行，真正决定成败的是「当前解释器有没有
+    装齐依赖」。项目 .venv 只是推荐位置：本机若用 Anaconda 等已装好依赖的解释器直接
+    跑同样可以，因此 .venv 缺失不再一票否决——有则建议对齐，无则靠下面的依赖校验兜底。
+    """
+    if OWN_PY.exists():
+        if Path(sys.executable).resolve() != OWN_PY.resolve():
+            print(f"[提示] 当前解释器不是项目虚拟环境：{sys.executable}")
+            print(f"       建议改用：{OWN_PY}")
+    else:
+        print(f"[提示] 未发现项目 .venv（{OWN_PY}），改用当前解释器：{sys.executable}")
     try:
         import fastapi  # noqa: F401
         import uvicorn  # noqa: F401
     except ImportError as e:
-        return f"当前解释器缺少依赖（{e.name}）。请用 .venv 里的 python 运行，或 pip install -r requirements.txt。"
+        if OWN_PY.exists():
+            hint = f"请用项目 .venv 里的 python 运行：{OWN_PY}"
+        else:
+            hint = "请用已装齐依赖的解释器运行（如 Anaconda），或先 pip install -r requirements.txt"
+        return f"当前解释器缺少依赖（{e.name}）：{sys.executable}\n       {hint}。"
     return None
 
 

@@ -1,5 +1,8 @@
-# Streamlit Community Cloud 依赖清单（与 pyproject.toml 保持一致，另加 langchain-openai 供云端后端使用）
-streamlit>=1.59.2
+# 智能 HR 知识库依赖清单（与 pyproject.toml 保持一致）
+# UI 框架已统一为 Gradio 6（与洞察端对齐）；门户托管时用 FastAPI + uvicorn 包一层 SSO 网关
+gradio>=6,<7
+fastapi>=0.115.2
+uvicorn>=0.30
 langchain-core>=1.4.9
 langchain-community>=0.4.2
 langchain-ollama>=1.1.0

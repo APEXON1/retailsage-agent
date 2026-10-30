@@ -31,7 +31,7 @@ os.environ.setdefault("NO_PROXY", "localhost,127.0.0.1,0.0.0.0")
 
 # 注意：这里不要再 load_dotenv()。app.py 自己在导入 config 前会按文件位置加载根 .env，
 # 重复加载没有意义，还容易掩盖路径问题。
-from app import CUSTOM_CSS, build_demo  # noqa: E402  （重活都在这里：gradio + data_insight.config 建目录）
+from app import CUSTOM_CSS, build_demo, build_theme  # noqa: E402  （重活都在这里：gradio + data_insight.config 建目录）
 
 import gradio as gr  # noqa: E402
 import uvicorn  # noqa: E402
@@ -122,6 +122,7 @@ def create_app() -> FastAPI:
         demo,
         path="/",
         auth_dependency=lambda request: user_of(request.cookies.get(COOKIE)),
+        theme=build_theme(),   # Gradio 6：mount 不读 Blocks() 里的 theme，必须在此显式传入
         css=CUSTOM_CSS,
         head=THEME_HEAD,
     )
